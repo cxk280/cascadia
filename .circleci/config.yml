@@ -1,0 +1,200 @@
+version: 2.1
+
+# Cascadia CI/CD.
+#
+#   Every push / PR : build + test (rust, the three python services, dashboard).
+#   On `main` only  : deploy to Railway dev (automatic) → staging (manual
+#                     approval gate) → prod (manual approval gate).
+#
+# Railway auth comes from the `railway-deploy` CircleCI context:
+#   RAILWAY_TOKEN       — a Railway account/team token with access to the project
+#   RAILWAY_PROJECT_ID  — the cascadia-dev project id (2b6a4e7f-...)
+# (Set these in CircleCI → Organization Settings → Contexts → railway-deploy.)
+
+executors:
+  rust:
+    docker:
+      - image: cimg/rust:1.83
+      - image: cimg/postgres:16.2
+        environment:
+          POSTGRES_USER: cascadia
+          POSTGRES_PASSWORD: cascadia
+          POSTGRES_DB: cascadia
+    environment:
+      CASCADIA_DATABASE_URL: postgres://cascadia:cascadia@localhost:5432/cascadia
+      RUSTFLAGS: "-D warnings"
+  python:
+    docker:
+      - image: cimg/python:3.12
+      - image: cimg/postgres:16.2
+        environment:
+          POSTGRES_USER: cascadia
+          POSTGRES_PASSWORD: cascadia
+          POSTGRES_DB: cascadia
+    environment:
+      CASCADIA_DATABASE_URL: postgres://cascadia:cascadia@localhost:5432/cascadia
+  node:
+    docker:
+      - image: cimg/node:20.11
+
+jobs:
+  rust:
+    executor: rust
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - cargo-v1-{{ checksum "Cargo.lock" }}
+      - run:
+          name: Toolchain components
+          command: rustup component add clippy rustfmt
+      - run:
+          name: Format check
+          command: cargo fmt --all -- --check
+      - run:
+          name: Clippy (deny warnings)
+          command: cargo clippy --workspace --all-targets -- -D warnings
+      - run:
+          name: Test
+          command: cargo test --workspace --no-fail-fast
+      - save_cache:
+          key: cargo-v1-{{ checksum "Cargo.lock" }}
+          paths:
+            - ~/.cargo/registry
+            - target
+
+  python:
+    executor: python
+    parameters:
+      service:
+        type: string
+    steps:
+      - checkout
+      - run:
+          name: Install uv
+          command: pip install --user uv
+      - run:
+          name: Sync + test (<< parameters.service >>)
+          working_directory: services/<< parameters.service >>
+          command: |
+            uv sync
+            uv run pytest -q
+
+  dashboard:
+    executor: node
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - npm-v1-{{ checksum "dashboard/package-lock.json" }}
+      - run:
+          name: Install deps
+          working_directory: dashboard
+          command: npm ci
+      - run:
+          name: Typecheck
+          working_directory: dashboard
+          command: npm run typecheck
+      - run:
+          name: Build
+          working_directory: dashboard
+          command: npm run build
+      - save_cache:
+          key: npm-v1-{{ checksum "dashboard/package-lock.json" }}
+          paths:
+            - dashboard/node_modules
+
+  deploy:
+    executor: node
+    parameters:
+      env:
+        type: string
+    steps:
+      - checkout
+      - run:
+          name: Install Railway CLI
+          command: npm i -g @railway/cli@latest
+      - run:
+          name: Deploy services to << parameters.env >>
+          command: |
+            set -euo pipefail
+            : "${RAILWAY_TOKEN:?set RAILWAY_TOKEN in the railway-deploy context}"
+            : "${RAILWAY_PROJECT_ID:?set RAILWAY_PROJECT_ID in the railway-deploy context}"
+            for svc in \
+              cascadia-proxy \
+              cascadia-dashboard \
+              cascadia-judge-worker \
+              cascadia-policy-controller \
+              cascadia-dashboard-api; do
+              echo ">> deploying $svc → << parameters.env >>"
+              railway up --ci \
+                --project "$RAILWAY_PROJECT_ID" \
+                --environment "<< parameters.env >>" \
+                --service "$svc"
+            done
+
+workflows:
+  build-test-deploy:
+    jobs:
+      - rust
+      - python:
+          name: test-judge-worker
+          service: judge-worker
+      - python:
+          name: test-policy-controller
+          service: policy-controller
+      - python:
+          name: test-dashboard-api
+          service: dashboard-api
+      - dashboard
+
+      # --- dev: automatic on merge to main, after tests pass ---
+      - deploy:
+          name: deploy-dev
+          env: dev
+          context: railway-deploy
+          requires:
+            - rust
+            - test-judge-worker
+            - test-policy-controller
+            - test-dashboard-api
+            - dashboard
+          filters:
+            branches:
+              only: main
+
+      # --- staging: behind a manual approval gate ---
+      - hold-staging:
+          type: approval
+          requires:
+            - deploy-dev
+          filters:
+            branches:
+              only: main
+      - deploy:
+          name: deploy-staging
+          env: staging
+          context: railway-deploy
+          requires:
+            - hold-staging
+          filters:
+            branches:
+              only: main
+
+      # --- prod: behind a second manual approval gate ---
+      - hold-prod:
+          type: approval
+          requires:
+            - deploy-staging
+          filters:
+            branches:
+              only: main
+      - deploy:
+          name: deploy-prod
+          env: prod
+          context: railway-deploy
+          requires:
+            - hold-prod
+          filters:
+            branches:
+              only: main
