@@ -6,10 +6,10 @@ version: 2.1
 #   On `main` only  : deploy to Railway dev (automatic) → staging (manual
 #                     approval gate) → prod (manual approval gate).
 #
-# Railway auth comes from the `railway-deploy` CircleCI context:
-#   RAILWAY_TOKEN       — a Railway account/team token with access to the project
-#   RAILWAY_PROJECT_ID  — the cascadia-dev project id (2b6a4e7f-...)
-# (Set these in CircleCI → Organization Settings → Contexts → railway-deploy.)
+# Railway auth comes from CircleCI project env vars:
+#   RAILWAY_API_TOKEN   — a Railway account/team token with access to the project
+#                         (the Railway CLI reads this automatically)
+#   RAILWAY_PROJECT_ID  — the project id (2b6a4e7f-14d6-496e-847c-9922411dfed3)
 
 executors:
   rust:
@@ -118,8 +118,8 @@ jobs:
           name: Deploy services to << parameters.env >>
           command: |
             set -euo pipefail
-            : "${RAILWAY_TOKEN:?set RAILWAY_TOKEN in the railway-deploy context}"
-            : "${RAILWAY_PROJECT_ID:?set RAILWAY_PROJECT_ID in the railway-deploy context}"
+            : "${RAILWAY_API_TOKEN:?set RAILWAY_API_TOKEN in CircleCI project env vars}"
+            : "${RAILWAY_PROJECT_ID:?set RAILWAY_PROJECT_ID in CircleCI project env vars}"
             for svc in \
               cascadia-proxy \
               cascadia-dashboard \
@@ -152,7 +152,6 @@ workflows:
       - deploy:
           name: deploy-dev
           env: dev
-          context: railway-deploy
           requires:
             - rust
             - test-judge-worker
@@ -174,7 +173,6 @@ workflows:
       - deploy:
           name: deploy-staging
           env: staging
-          context: railway-deploy
           requires:
             - hold-staging
           filters:
@@ -192,7 +190,6 @@ workflows:
       - deploy:
           name: deploy-prod
           env: prod
-          context: railway-deploy
           requires:
             - hold-prod
           filters:
