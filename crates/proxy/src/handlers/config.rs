@@ -18,10 +18,7 @@ pub async fn get_config(State(state): State<AppState>) -> Json<Value> {
     // Three-posture data-residency classification (matches SECURITY.md's
     // table). Computed here so the dashboard doesn't have to duplicate the
     // logic.
-    let all_shadow_off = policy
-        .clusters
-        .values()
-        .all(|c| c.shadow_rate <= 0.0);
+    let all_shadow_off = policy.clusters.values().all(|c| c.shadow_rate <= 0.0);
     let residency_posture = if all_shadow_off {
         "shadow_disabled"
     } else if cfg.redact_shadow_bodies {

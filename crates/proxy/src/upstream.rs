@@ -41,8 +41,7 @@ pub struct UpstreamResponse {
 /// `data: [DONE]\n\n` sentinel. For OpenAI/Groq/xAI this is the upstream stream
 /// passed through verbatim; for Anthropic it's a translation of the typed
 /// Anthropic event stream into OpenAI's delta shape.
-pub type SseByteStream =
-    Pin<Box<dyn Stream<Item = Result<Bytes, AppError>> + Send + 'static>>;
+pub type SseByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, AppError>> + Send + 'static>>;
 
 /// Result of a streaming upstream call. Status is the upstream HTTP status
 /// (200 on success; the caller propagates non-success without consuming the
@@ -63,16 +62,14 @@ pub async fn forward_chat(
     provider: Provider,
     request_body: &Value,
 ) -> Result<UpstreamResponse, AppError> {
-    let (api_key, base_url) = config.provider_credentials(provider).ok_or_else(|| {
-        AppError::ProviderUnconfigured(provider_unconfigured_msg(provider))
-    })?;
+    let (api_key, base_url) = config
+        .provider_credentials(provider)
+        .ok_or_else(|| AppError::ProviderUnconfigured(provider_unconfigured_msg(provider)))?;
     match provider {
         Provider::OpenAI | Provider::Groq | Provider::XAI => {
             openai_compat::forward(client, base_url, api_key, request_body).await
         }
-        Provider::Anthropic => {
-            anthropic::forward(client, base_url, api_key, request_body).await
-        }
+        Provider::Anthropic => anthropic::forward(client, base_url, api_key, request_body).await,
     }
 }
 
@@ -87,9 +84,9 @@ pub async fn forward_chat_stream(
     provider: Provider,
     request_body: &Value,
 ) -> Result<UpstreamStreamResponse, AppError> {
-    let (api_key, base_url) = config.provider_credentials(provider).ok_or_else(|| {
-        AppError::ProviderUnconfigured(provider_unconfigured_msg(provider))
-    })?;
+    let (api_key, base_url) = config
+        .provider_credentials(provider)
+        .ok_or_else(|| AppError::ProviderUnconfigured(provider_unconfigured_msg(provider)))?;
     match provider {
         Provider::OpenAI | Provider::Groq | Provider::XAI => {
             openai_compat::forward_stream(client, base_url, api_key, request_body).await

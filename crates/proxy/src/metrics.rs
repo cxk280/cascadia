@@ -43,11 +43,9 @@ impl Metrics {
         for route in ["chat_completions", "chat_completions_stream"] {
             for provider in ["openai", "anthropic", "groq", "xai", "unknown"] {
                 for status in ["ok", "upstream_error", "error"] {
-                    let _ = requests_total
-                        .with_label_values(&[route, provider, status]);
+                    let _ = requests_total.with_label_values(&[route, provider, status]);
                 }
-                let _ = request_duration_seconds
-                    .with_label_values(&[route, provider]);
+                let _ = request_duration_seconds.with_label_values(&[route, provider]);
             }
         }
 

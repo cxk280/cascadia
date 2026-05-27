@@ -160,8 +160,8 @@ impl Config {
             .unwrap_or_else(|_| "https://api.groq.com/openai".to_string());
 
         let xai_api_key = env::var("CASCADIA_XAI_API_KEY").ok();
-        let xai_base_url = env::var("CASCADIA_XAI_BASE_URL")
-            .unwrap_or_else(|_| "https://api.x.ai".to_string());
+        let xai_base_url =
+            env::var("CASCADIA_XAI_BASE_URL").unwrap_or_else(|_| "https://api.x.ai".to_string());
 
         let log_level = env::var("CASCADIA_LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
         let log_json = env::var("CASCADIA_LOG_JSON")
@@ -223,10 +223,22 @@ impl Config {
     /// `ProviderUnconfigured` if its key isn't set.
     pub fn provider_credentials(&self, provider: Provider) -> Option<(&str, &str)> {
         match provider {
-            Provider::OpenAI => self.openai_api_key.as_deref().map(|k| (k, self.openai_base_url.as_str())),
-            Provider::Anthropic => self.anthropic_api_key.as_deref().map(|k| (k, self.anthropic_base_url.as_str())),
-            Provider::Groq => self.groq_api_key.as_deref().map(|k| (k, self.groq_base_url.as_str())),
-            Provider::XAI => self.xai_api_key.as_deref().map(|k| (k, self.xai_base_url.as_str())),
+            Provider::OpenAI => self
+                .openai_api_key
+                .as_deref()
+                .map(|k| (k, self.openai_base_url.as_str())),
+            Provider::Anthropic => self
+                .anthropic_api_key
+                .as_deref()
+                .map(|k| (k, self.anthropic_base_url.as_str())),
+            Provider::Groq => self
+                .groq_api_key
+                .as_deref()
+                .map(|k| (k, self.groq_base_url.as_str())),
+            Provider::XAI => self
+                .xai_api_key
+                .as_deref()
+                .map(|k| (k, self.xai_base_url.as_str())),
         }
     }
 }
@@ -238,7 +250,10 @@ mod tests {
     #[test]
     fn provider_from_str_accepts_all_four() {
         assert_eq!(Provider::from_str("openai").unwrap(), Provider::OpenAI);
-        assert_eq!(Provider::from_str("anthropic").unwrap(), Provider::Anthropic);
+        assert_eq!(
+            Provider::from_str("anthropic").unwrap(),
+            Provider::Anthropic
+        );
         assert_eq!(Provider::from_str("groq").unwrap(), Provider::Groq);
         assert_eq!(Provider::from_str("xai").unwrap(), Provider::XAI);
         assert_eq!(Provider::from_str("XAI").unwrap(), Provider::XAI); // case-insensitive

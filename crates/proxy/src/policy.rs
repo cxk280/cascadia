@@ -139,12 +139,10 @@ impl PolicyTable {
     /// file path in any error so an operator sees *which* file failed.
     pub fn from_json_file(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path_ref = path.as_ref();
-        let text = std::fs::read_to_string(path_ref).map_err(|e| {
-            anyhow::anyhow!("reading policy file {}: {e}", path_ref.display())
-        })?;
-        Self::from_json_str(&text).map_err(|e| {
-            anyhow::anyhow!("parsing policy file {}: {e}", path_ref.display())
-        })
+        let text = std::fs::read_to_string(path_ref)
+            .map_err(|e| anyhow::anyhow!("reading policy file {}: {e}", path_ref.display()))?;
+        Self::from_json_str(&text)
+            .map_err(|e| anyhow::anyhow!("parsing policy file {}: {e}", path_ref.display()))
     }
 
     pub fn from_json_str(text: &str) -> anyhow::Result<Self> {
@@ -174,12 +172,10 @@ impl PolicyTable {
             policy.cluster_id = key.clone();
             validate_bounds(policy.threshold, policy.shadow_rate)?;
             // Phase 7 hard-fail: every model string must be `provider/model`.
-            parse_model_id(&policy.cheap_model).map_err(|e| {
-                anyhow::anyhow!("cluster '{key}' cheap_model invalid: {e}")
-            })?;
-            parse_model_id(&policy.expensive_model).map_err(|e| {
-                anyhow::anyhow!("cluster '{key}' expensive_model invalid: {e}")
-            })?;
+            parse_model_id(&policy.cheap_model)
+                .map_err(|e| anyhow::anyhow!("cluster '{key}' cheap_model invalid: {e}"))?;
+            parse_model_id(&policy.expensive_model)
+                .map_err(|e| anyhow::anyhow!("cluster '{key}' expensive_model invalid: {e}"))?;
         }
         anyhow::ensure!(
             table.clusters.contains_key(&table.default_cluster),
@@ -352,6 +348,9 @@ mod tests {
         }"#;
         let t = PolicyTable::from_json_str(json).unwrap();
         assert_eq!(t.lookup("default").cheap_model, "groq/llama-3.3-70b");
-        assert_eq!(t.lookup("default").expensive_model, "anthropic/claude-sonnet");
+        assert_eq!(
+            t.lookup("default").expensive_model,
+            "anthropic/claude-sonnet"
+        );
     }
 }

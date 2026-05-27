@@ -80,7 +80,10 @@ mod tests {
     #[test]
     fn short_clean_response_is_high_confidence() {
         let c = confidence("Yes.");
-        assert!(c > 0.9, "expected high confidence for short clean reply, got {c}");
+        assert!(
+            c > 0.9,
+            "expected high confidence for short clean reply, got {c}"
+        );
     }
 
     #[test]
@@ -102,7 +105,10 @@ mod tests {
     fn uncertainty_markers_penalize() {
         let clean = confidence("The capital of Norway is Oslo.");
         let hedged = confidence("I'm not sure, but I think the capital of Norway is Oslo.");
-        assert!(hedged < clean, "hedged should score lower; clean={clean} hedged={hedged}");
+        assert!(
+            hedged < clean,
+            "hedged should score lower; clean={clean} hedged={hedged}"
+        );
     }
 
     #[test]

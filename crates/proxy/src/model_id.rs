@@ -23,7 +23,10 @@ pub struct ModelId {
 
 impl ModelId {
     pub fn new(provider: Provider, model: impl Into<String>) -> Self {
-        Self { provider, model: model.into() }
+        Self {
+            provider,
+            model: model.into(),
+        }
     }
 }
 
@@ -39,10 +42,7 @@ pub fn parse_model_id(s: &str) -> anyhow::Result<ModelId> {
         !prefix.is_empty(),
         "model id `{s}` has empty provider before `/`"
     );
-    anyhow::ensure!(
-        !rest.is_empty(),
-        "model id `{s}` has empty model after `/`"
-    );
+    anyhow::ensure!(!rest.is_empty(), "model id `{s}` has empty model after `/`");
     let provider = Provider::from_str(prefix).map_err(|_| {
         anyhow::anyhow!(
             "model id `{s}`: unknown provider `{prefix}`; expected one of openai, anthropic, groq, xai.\n\
@@ -51,7 +51,10 @@ pub fn parse_model_id(s: &str) -> anyhow::Result<ModelId> {
              See docs/adding-a-provider.md."
         )
     })?;
-    Ok(ModelId { provider, model: rest.to_string() })
+    Ok(ModelId {
+        provider,
+        model: rest.to_string(),
+    })
 }
 
 #[cfg(test)]
