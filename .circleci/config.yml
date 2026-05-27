@@ -77,7 +77,7 @@ jobs:
           name: Sync + test (<< parameters.service >>)
           working_directory: services/<< parameters.service >>
           command: |
-            uv sync
+            uv sync --extra dev
             uv run pytest -q
 
   dashboard:
