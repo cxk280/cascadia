@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import asyncpg
@@ -26,12 +27,24 @@ import asyncpg
 from cascadia_judge.storage.base import PendingPair, ShadowPairStorage
 from cascadia_judge.types import JudgeVerdict, ShadowPair
 
+# A claim older than this is treated as stale: the worker that held it has
+# almost certainly crashed, so the pair becomes eligible to be re-claimed.
+# Generous relative to a judging cycle (seconds) so a slow-but-alive worker
+# isn't double-claimed.
+DEFAULT_RECLAIM_AFTER = timedelta(minutes=15)
+
 
 class AsyncpgShadowPairStorage(ShadowPairStorage):
     """asyncpg-backed shadow_pairs + judge_scores adapter."""
 
-    def __init__(self, pool: asyncpg.Pool) -> None:
+    def __init__(
+        self,
+        pool: asyncpg.Pool,
+        *,
+        reclaim_after: timedelta = DEFAULT_RECLAIM_AFTER,
+    ) -> None:
         self._pool = pool
+        self._reclaim_after = reclaim_after
 
     @classmethod
     async def connect(
@@ -40,30 +53,44 @@ class AsyncpgShadowPairStorage(ShadowPairStorage):
         *,
         min_size: int = 1,
         max_size: int = 4,
+        reclaim_after: timedelta = DEFAULT_RECLAIM_AFTER,
     ) -> "AsyncpgShadowPairStorage":
         pool = await asyncpg.create_pool(dsn=dsn, min_size=min_size, max_size=max_size)
-        return cls(pool)
+        return cls(pool, reclaim_after=reclaim_after)
 
     async def close(self) -> None:
         await self._pool.close()
 
     async def fetch_pending(self, limit: int) -> Sequence[PendingPair]:
-        # `FOR UPDATE SKIP LOCKED` lets multiple poller replicas race for
-        # rows without ever picking up the same pair. Without it, two
-        # concurrent pollers would re-judge identical pairs and burn tokens
-        # (Postgres' UNIQUE constraint dedupes the *write*, but each LLM
-        # call still costs money).
+        # Claim the oldest unjudged, unclaimed (or stale-claimed) rows in a
+        # single statement: the CTE selects with `FOR UPDATE SKIP LOCKED`
+        # (concurrent replicas skip each other's locked rows) and the outer
+        # UPDATE stamps `claimed_at`, so even after this statement commits a
+        # second replica won't re-fetch the same pairs until the reclaim
+        # window elapses. Previously the bare `SELECT … FOR UPDATE SKIP
+        # LOCKED` released its row locks the moment the pooled query returned,
+        # so replicas still re-judged the same pairs and double-paid for LLM
+        # calls (the UNIQUE constraint only dedupes the write, not the call).
+        stale_cutoff = datetime.now(timezone.utc) - self._reclaim_after
         sql = """
-            SELECT pair_id, request_id, cluster_id, prompt,
-                   cheap_model, cheap_response,
-                   expensive_model, expensive_response
-              FROM shadow_pairs
-             WHERE judged_at IS NULL
-          ORDER BY occurred_at ASC
-             LIMIT $1
-        FOR UPDATE SKIP LOCKED
+            WITH claimable AS (
+                SELECT pair_id
+                  FROM shadow_pairs
+                 WHERE judged_at IS NULL
+                   AND (claimed_at IS NULL OR claimed_at < $2)
+              ORDER BY occurred_at ASC
+                 LIMIT $1
+            FOR UPDATE SKIP LOCKED
+            )
+            UPDATE shadow_pairs sp
+               SET claimed_at = NOW()
+              FROM claimable c
+             WHERE sp.pair_id = c.pair_id
+         RETURNING sp.pair_id, sp.request_id, sp.cluster_id, sp.prompt,
+                   sp.cheap_model, sp.cheap_response,
+                   sp.expensive_model, sp.expensive_response
         """
-        rows = await self._pool.fetch(sql, limit)
+        rows = await self._pool.fetch(sql, limit, stale_cutoff)
         return tuple(_row_to_pending_pair(row) for row in rows)
 
     async def mark_judged(self, pair_ids: Sequence[str]) -> None:
@@ -72,6 +99,29 @@ class AsyncpgShadowPairStorage(ShadowPairStorage):
         # asyncpg binds list params as PostgreSQL arrays — perfect for the IN.
         sql = "UPDATE shadow_pairs SET judged_at = NOW() WHERE pair_id = ANY($1::uuid[])"
         await self._pool.execute(sql, [uuid.UUID(p) for p in pair_ids])
+
+    async def release_claims(self, pair_ids: Sequence[str]) -> None:
+        if not pair_ids:
+            return
+        # Only release rows that are still unjudged — never un-finalize a pair.
+        sql = """
+            UPDATE shadow_pairs SET claimed_at = NULL
+             WHERE pair_id = ANY($1::uuid[]) AND judged_at IS NULL
+        """
+        await self._pool.execute(sql, [uuid.UUID(p) for p in pair_ids])
+
+    async def set_ensemble_score(
+        self,
+        pair_id: str,
+        score: float | None,
+        confidence: float | None,
+    ) -> None:
+        sql = """
+            UPDATE shadow_pairs
+               SET ensemble_score = $2, ensemble_confidence = $3
+             WHERE pair_id = $1
+        """
+        await self._pool.execute(sql, uuid.UUID(pair_id), score, confidence)
 
     async def write_verdicts(
         self,

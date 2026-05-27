@@ -58,15 +58,26 @@ class ShadowPairReader(Protocol):
     """Read shadow_pairs that haven't been judged yet."""
 
     async def fetch_pending(self, limit: int) -> Sequence[PendingPair]:
-        """Return up to `limit` un-judged pairs, oldest first.
+        """Claim and return up to `limit` un-judged pairs, oldest first.
 
         Adapters should order by `occurred_at ASC` so the poller doesn't
-        starve old pairs when a backlog accumulates.
+        starve old pairs when a backlog accumulates, and must *claim* the
+        rows they return (so a second poller replica doesn't re-fetch and
+        re-judge the same pairs). A claim older than the adapter's reclaim
+        window is treated as stale and may be re-claimed.
         """
         ...
 
     async def mark_judged(self, pair_ids: Sequence[str]) -> None:
         """Set shadow_pairs.judged_at = NOW() for the given pair ids."""
+        ...
+
+    async def release_claims(self, pair_ids: Sequence[str]) -> None:
+        """Clear the claim on the given (still-unjudged) pairs.
+
+        Called when processing failed so the pair retries on the next cycle
+        instead of waiting out the stale-reclaim window.
+        """
         ...
 
 
@@ -79,6 +90,19 @@ class JudgeVerdictWriter(Protocol):
         pair_id: str,
         verdicts: Sequence[JudgeVerdict],
     ) -> None:
+        ...
+
+    async def set_ensemble_score(
+        self,
+        pair_id: str,
+        score: float | None,
+        confidence: float | None,
+    ) -> None:
+        """Persist the bias-corrected ensemble score for a pair.
+
+        `None`/`None` records "judged, but no usable signal" so the policy
+        controller excludes the pair from its mean.
+        """
         ...
 
 

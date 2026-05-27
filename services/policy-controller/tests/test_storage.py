@@ -79,6 +79,23 @@ async def test_asyncpg_reader_cluster_stats_shape() -> None:
 
 
 @pytest.mark.asyncio
+async def test_asyncpg_reader_averages_ensemble_score_not_raw_judge_rows() -> None:
+    # EC-O1/EC-O2 regression: the controller must tune on the bias-corrected
+    # per-pair ensemble score, not a flat AVG over raw judge_scores rows (which
+    # counted error rows as 0, double-counted swapped siblings, included
+    # self-preferring judges, and made sample_size a row-count not a pair-count).
+    pool = MagicMock()
+    pool.fetch = AsyncMock(return_value=[])
+    reader = AsyncpgStatsReader(pool)
+    await reader.cluster_stats(timedelta(hours=1))
+    sql = pool.fetch.call_args.args[0]
+    assert "ensemble_score" in sql
+    assert "AVG(ensemble_score)" in sql
+    assert "AVG(js.score)" not in sql
+    assert "JOIN judge_scores" not in sql
+
+
+@pytest.mark.asyncio
 async def test_asyncpg_reader_close_calls_pool_close() -> None:
     pool = MagicMock()
     pool.close = AsyncMock()
