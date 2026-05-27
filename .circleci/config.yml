@@ -122,12 +122,16 @@ jobs:
             set -euo pipefail
             : "${RAILWAY_API_TOKEN:?set RAILWAY_API_TOKEN in CircleCI project env vars}"
             : "${RAILWAY_PROJECT_ID:?set RAILWAY_PROJECT_ID in CircleCI project env vars}"
+            # Deploy backends first; the dashboard LAST. Its Railway health
+            # check is `/` — a server-rendered page that fetches from the
+            # backend — so deploying it before the proxy/api finish restarting
+            # races the health check and fails the deploy.
             for svc in \
               cascadia-proxy \
-              cascadia-dashboard \
+              cascadia-dashboard-api \
               cascadia-judge-worker \
               cascadia-policy-controller \
-              cascadia-dashboard-api; do
+              cascadia-dashboard; do
               echo ">> deploying $svc → << parameters.env >>"
               railway up --ci \
                 --project "$RAILWAY_PROJECT_ID" \
