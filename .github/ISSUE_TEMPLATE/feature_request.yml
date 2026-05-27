@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest an enhancement or new capability.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting, please check:
+        - **Adding a new provider?** Read [`docs/adding-a-provider.md`](../../docs/adding-a-provider.md) FIRST — most cases are a one-line `CASCADIA_OPENAI_BASE_URL` override, no code change.
+        - **Customizing judges / aggregator / refit?** Read [`docs/extending.md`](../../docs/extending.md) — extension points are documented separately from the core code.
+        - [DIFFERENTIATOR.md](../../DIFFERENTIATOR.md) — Cascadia is the closed-loop quality-measurement layer, not the provider-plumbing layer. Some requests (retries, fallback chains, per-key load balancing) belong in LiteLLM, not here.
+        - [PLAN.md §9](../../PLAN.md) — several technical patterns are intentional decisions (hard-fail on unprefixed models, anti-self-preference filter, etc.).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem does this feature solve? Who has it?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you like Cascadia to behave? Be concrete.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Why not LiteLLM / Portkey / a config flag / a docs change?
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: What does "done" look like?
+      description: Concrete acceptance criteria the maintainer can verify.
+    validations:
+      required: true

@@ -1,0 +1,17 @@
+{
+  "shadow_pair": {
+    "request_id": "req-demo-0001",
+    "prompt": "What is the capital of France?",
+    "cheap_model": "gpt-4o-mini",
+    "cheap_response": "The capital of France is Paris.",
+    "expensive_model": "claude-opus-4-7",
+    "expensive_response": "Paris is the capital of France.",
+    "cluster_id": "factual-qa"
+  },
+  "scripted": {
+    "model": "scripted-model",
+    "responses": {
+      "pairwise_preference_v1::req-demo-0001": "{\"score\": 0.96, \"confidence\": 0.9, \"rationale\": \"Both answers correct; cheap response equally clear.\"}"
+    }
+  }
+}

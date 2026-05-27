@@ -1,0 +1,53 @@
+# Tell `railway up` which paths to exclude when uploading build context.
+# Critical: the local target/, node_modules/, .venv/ directories must be
+# excluded — the container builds will produce their own versions from source.
+
+# Rust artifacts
+target/
+**/target/
+*.profraw
+
+# Python virtual environments + caches
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+**/.mypy_cache/
+.ruff_cache/
+**/.ruff_cache/
+
+# Node.js
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+**/out/
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local-only secrets and run state
+.env
+.env.local
+.env.*.local
+*.pid
+/tmp/
+**/calibration/archive_*.jsonl
+**/calibration/labels_*.csv
+
+# Test outputs
+coverage/
+**/coverage/
+*.coverage
+htmlcov/
+
+# Docs build artifacts (only deploy/docker/* needs to ship; the .md docs are fine)
+docs/blog/_build/

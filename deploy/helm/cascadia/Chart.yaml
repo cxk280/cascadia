@@ -1,0 +1,25 @@
+apiVersion: v2
+name: cascadia
+description: Cascadia LLM gateway — a self-hostable proxy with cascading inference and online eval.
+type: application
+version: 0.0.1
+appVersion: "0.0.1"
+keywords:
+  - llm
+  - gateway
+  - cascade
+  - openai
+  - anthropic
+home: https://github.com/cascadia-llm/cascadia
+sources:
+  - https://github.com/cascadia-llm/cascadia
+maintainers:
+  - name: Chris King
+    email: chris@cking.me
+annotations:
+  # ArtifactHub-friendly metadata.
+  artifacthub.io/changes: |
+    - Initial release.
+  artifacthub.io/license: MIT
+  artifacthub.io/maturity: alpha
+  artifacthub.io/prerelease: "true"

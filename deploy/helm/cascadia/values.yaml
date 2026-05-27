@@ -1,0 +1,205 @@
+# Default values for the cascadia chart.
+# Override with `helm install ... -f my-values.yaml` or `--set key=value`.
+
+# -- Number of proxy pods. Cascadia is stateless on the hot path; scale horizontally.
+replicaCount: 2
+
+image:
+  repository: ghcr.io/cascadia-llm/cascadia
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# -- Override the Chart name or full release name.
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# -- Pod-level securityContext.
+podSecurityContext:
+  fsGroup: 65532
+  runAsNonRoot: true
+
+# -- Container-level securityContext.
+securityContext:
+  runAsUser: 65532
+  runAsGroup: 65532
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# -- Resource requests/limits. Tune for your traffic — these are starter values.
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 2000m
+    memory: 512Mi
+
+# -- Horizontal pod autoscaler. Disabled by default; tune to your traffic.
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+# -- Liveness probes hit /livez (cheap; just confirms the process is up).
+# -- Readiness probes hit /readyz (DB pool + at least one provider configured).
+# -- Both endpoints are exposed by the proxy from Phase 7 onward; /health is
+# -- preserved as a back-compat alias for /readyz.
+probes:
+  liveness:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+# -- Proxy configuration. Most map 1:1 to CASCADIA_* env vars.
+#
+# To run against an on-prem / private OpenAI-compatible upstream (vLLM,
+# Together, DeepInfra, etc.) override `openaiBaseUrl` to your internal
+# endpoint. The model strings in your policy still use the `openai/` prefix
+# — that selects the OpenAI adapter; the base URL is where it dials.
+config:
+  logLevel: info                    # trace | debug | info | warn | error
+  logJson: true                     # JSON log lines for production
+  # -- Persist verbatim request/response bodies in the events table.
+  #    Defaults to false for privacy. BUT: the judge worker scores quality
+  #    off these bodies — disabling them weakens the closed-loop quality
+  #    signal that's the entire point of this gateway. If you don't carry
+  #    PII (or you've already redacted at the application layer), set this
+  #    to true. For regulated envs, prefer `redactShadowBodies: true` over
+  #    leaving persistBodies off — see the README "Data residency" section.
+  persistBodies: false
+  redactShadowBodies: false         # SHA-256 the shadow_pair text columns (regulated envs)
+  openaiBaseUrl: https://api.openai.com
+  anthropicBaseUrl: https://api.anthropic.com
+  groqBaseUrl: https://api.groq.com/openai
+  xaiBaseUrl: https://api.x.ai
+  # -- Inline policy file. When set, the chart creates a ConfigMap with the
+  #    JSON at /etc/cascadia/policy.json and points `CASCADIA_POLICY_FILE` at
+  #    it. When empty, the proxy starts with a single default cluster derived
+  #    from env-var fallbacks (cheap/expensive model + threshold). Multi-
+  #    cluster deployments REQUIRE a policy file.
+  policy: ""
+  # -- Number of classifier hash-buckets. Determines how many distinct
+  #    clusters the classifier can produce. Leave empty to inherit the
+  #    proxy default (1, single cluster). Set when running a multi-cluster
+  #    policy; the value must be ≥ the number of clusters in `config.policy`.
+  clusterBuckets: ""
+
+# -- Secret values pulled into the proxy as env vars. Either provide them here
+# (Helm will create the Secret) OR set existingSecret to reference one you already manage.
+secrets:
+  openaiApiKey: ""
+  anthropicApiKey: ""
+  groqApiKey: ""
+  xaiApiKey: ""
+  # Format: postgres://user:pass@host:5432/dbname
+  databaseUrl: ""
+
+existingSecret: ""
+
+# -- Optional: send OTLP traces to a collector.
+telemetry:
+  otlpEndpoint: ""                  # e.g. http://otel-collector:4318/v1/traces
+
+# -- Prometheus Operator ServiceMonitor. Only created if you have prometheus-operator installed.
+serviceMonitor:
+  enabled: false
+  namespace: ""                     # default: same namespace as the release
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+# -- Pod annotations (e.g. for Prometheus scraping without ServiceMonitor).
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+
+nodeSelector: {}
+tolerations: []
+
+# -- Pod affinity rules. Default (empty `{}`) causes the chart to render a
+#    soft podAntiAffinity preferring `topologyKey: kubernetes.io/hostname`
+#    so replicas spread across nodes when the scheduler can. The default's
+#    labelSelector is computed from the templated chart name so
+#    `nameOverride:` doesn't silently disable the spread.
+#
+#    Setting affinity to anything non-empty disables the chart's default —
+#    your value replaces it wholesale (including the anti-affinity rule).
+#    For hard cross-node guarantees, override with
+#    requiredDuringSchedulingIgnoredDuringExecution.
+affinity: {}
+
+# -- Extra environment variables to inject (advanced).
+extraEnv: []
+#  - name: RUST_LOG
+#    value: cascadia_proxy=debug
+
+# -- PodDisruptionBudget. Recommended for production HA.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# -- NetworkPolicy. Recommended for air-gapped / regulated environments.
+# When enabled, ingress is restricted to the configured set (Service +
+# operator-allowlisted CIDRs) and egress is restricted to the upstream
+# provider(s) you actually use + Postgres. Leave disabled if your
+# environment manages NetworkPolicies out-of-band.
+networkPolicy:
+  enabled: false
+  # -- Ingress: allow callers from these podSelectors / namespaces.
+  ingress:
+    # Example: allow all pods in the gateway-clients namespace.
+    # - from:
+    #     - namespaceSelector:
+    #         matchLabels:
+    #           name: gateway-clients
+    - {}
+  # -- Egress: explicit allowlist. The proxy needs to reach (a) Postgres,
+  # (b) each upstream provider's host. CIDRs OR DNS names — Kubernetes
+  # NetworkPolicy is L3/L4 so prefer CIDRs; for L7/DNS use a CNI that
+  # supports it (Cilium, Calico Enterprise).
+  egress:
+    # Allow DNS lookups
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow Postgres
+    # - to:
+    #     - ipBlock:
+    #         cidr: 10.0.0.0/8
+    #   ports:
+    #     - protocol: TCP
+    #       port: 5432
+    # Allow upstream provider (e.g. internal vLLM)
+    # - to:
+    #     - ipBlock:
+    #         cidr: 10.50.0.0/16
+    #   ports:
+    #     - protocol: TCP
+    #       port: 8000

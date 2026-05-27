@@ -1,0 +1,48 @@
+[package]
+name = "cascadia-proxy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Cascade-routing LLM gateway hot path"
+
+[[bin]]
+name = "cascadia-proxy"
+path = "src/main.rs"
+
+[lib]
+name = "cascadia_proxy"
+path = "src/lib.rs"
+
+[dependencies]
+tokio.workspace = true
+axum.workspace = true
+hyper.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+prometheus.workspace = true
+reqwest.workspace = true
+once_cell.workspace = true
+async-trait.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+sqlx.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+tracing-opentelemetry.workspace = true
+rand.workspace = true
+arc-swap.workspace = true
+twox-hash.workspace = true
+sha2 = "0.10"
+subtle = "2"
+futures-util.workspace = true
+bytes.workspace = true

@@ -1,0 +1,119 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Each lane runs in isolation so a Rust failure doesn't hide a Python one.
+# Caches keyed by the lockfile / Cargo.lock hashes so warm runs are <1m.
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  rust:
+    name: rust (cargo test + clippy)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cascadia
+          POSTGRES_PASSWORD: cascadia
+          POSTGRES_DB: cascadia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cascadia"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      CASCADIA_DATABASE_URL: postgres://cascadia:cascadia@localhost:5432/cascadia
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: cascadia-proxy
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: test
+        run: cargo test --workspace --no-fail-fast
+
+  python:
+    name: python (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - judge-worker
+          - policy-controller
+          - dashboard-api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cascadia
+          POSTGRES_PASSWORD: cascadia
+          POSTGRES_DB: cascadia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cascadia"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    env:
+      CASCADIA_DATABASE_URL: postgres://cascadia:cascadia@localhost:5432/cascadia
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: services/${{ matrix.service }}/pyproject.toml
+      - name: install
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -U pip
+          .venv/bin/pip install -e ".[dev]"
+      - name: ruff
+        run: .venv/bin/ruff check .
+      - name: test
+        run: .venv/bin/pytest -q
+
+  dashboard:
+    name: dashboard (tsc + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
+      - name: install
+        run: npm ci
+      - name: typecheck
+        run: npx tsc --noEmit
+      - name: build
+        run: npm run build
+        env:
+          # The build doesn't actually call the dashboard-api but Next.js
+          # complains when env vars referenced in code are unset at build.
+          CASCADIA_DASHBOARD_API_BASE: http://127.0.0.1:18082

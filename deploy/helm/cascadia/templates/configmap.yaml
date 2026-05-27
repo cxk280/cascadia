@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cascadia.fullname" . }}-config
+  labels:
+    {{- include "cascadia.labels" . | nindent 4 }}
+data:
+  CASCADIA_LISTEN_ADDR: "0.0.0.0:8080"
+  CASCADIA_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  CASCADIA_LOG_JSON: {{ .Values.config.logJson | quote }}
+  CASCADIA_PERSIST_BODIES: {{ .Values.config.persistBodies | quote }}
+  CASCADIA_REDACT_SHADOW_BODIES: {{ .Values.config.redactShadowBodies | quote }}
+  CASCADIA_OPENAI_BASE_URL: {{ .Values.config.openaiBaseUrl | quote }}
+  CASCADIA_ANTHROPIC_BASE_URL: {{ .Values.config.anthropicBaseUrl | quote }}
+  CASCADIA_GROQ_BASE_URL: {{ .Values.config.groqBaseUrl | quote }}
+  CASCADIA_XAI_BASE_URL: {{ .Values.config.xaiBaseUrl | quote }}
+  {{- if .Values.config.policy }}
+  CASCADIA_POLICY_FILE: "/etc/cascadia/policy.json"
+  {{- end }}
+  {{- if .Values.config.clusterBuckets }}
+  CASCADIA_CLUSTER_BUCKETS: {{ .Values.config.clusterBuckets | quote }}
+  {{- end }}
+  {{- if .Values.telemetry.otlpEndpoint }}
+  CASCADIA_OTLP_ENDPOINT: {{ .Values.telemetry.otlpEndpoint | quote }}
+  {{- end }}
+{{- if .Values.config.policy }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cascadia.fullname" . }}-policy
+  labels:
+    {{- include "cascadia.labels" . | nindent 4 }}
+data:
+  policy.json: |
+    {{- .Values.config.policy | nindent 4 }}
+{{- end }}

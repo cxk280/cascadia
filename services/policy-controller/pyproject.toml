@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cascadia-policy-controller"
+version = "0.0.1"
+description = "Periodic policy refit for Cascadia: read judge_scores, update per-cluster cascade thresholds, emit policy JSON for proxy hot-reload."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+authors = [{ name = "Chris King", email = "chris@cking.me" }]
+dependencies = [
+  "asyncpg>=0.29",
+  "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.5",
+]
+
+[project.scripts]
+cascadia-policy-controller = "cascadia_policy.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cascadia_policy"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

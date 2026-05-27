@@ -1,0 +1,35 @@
+# Local-dev stack for Cascadia.
+#
+# Phase 1: Postgres only. The proxy itself you'll run via `cargo run -p cascadia-proxy`
+# on the host so iteration stays fast. Once the proxy starts persisting events
+# (Phase 2), the connection string is:
+#
+#   postgres://cascadia:cascadia@localhost:5432/cascadia
+#
+# Usage:
+#   $ docker compose -f deploy/compose/docker-compose.yml up -d
+#   $ cargo run -p cascadia-proxy
+#
+# Tear down:
+#   $ docker compose -f deploy/compose/docker-compose.yml down -v
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cascadia-postgres
+    environment:
+      POSTGRES_USER: cascadia
+      POSTGRES_PASSWORD: cascadia
+      POSTGRES_DB: cascadia
+    ports:
+      - "5432:5432"
+    volumes:
+      - cascadia-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cascadia -d cascadia"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  cascadia-postgres:

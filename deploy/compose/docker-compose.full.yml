@@ -1,0 +1,124 @@
+# Full-stack local validation. Mirrors the Railway topology — Postgres +
+# proxy + dashboard-api + dashboard + judge-worker + policy-controller —
+# but runs everything as local containers. Useful before pushing to Railway.
+#
+# Usage:
+#   # Build all images first (one time):
+#   $ cd /Users/christopherking/code/cascadia
+#   $ for svc in proxy dashboard-api dashboard judge-worker policy-controller; do \
+#         docker build -f deploy/docker/${svc}.Dockerfile -t cascadia-${svc}:dev .; \
+#     done
+#
+#   # Run the stack:
+#   $ docker compose -f deploy/compose/docker-compose.full.yml up
+#
+#   # Tear down + wipe DB:
+#   $ docker compose -f deploy/compose/docker-compose.full.yml down -v
+#
+# This file deliberately uses the same env-var names that Railway will use,
+# so the only delta between local + prod is the value of CASCADIA_DATABASE_URL
+# and the API keys.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cascadia-full-postgres
+    environment:
+      POSTGRES_USER: cascadia
+      POSTGRES_PASSWORD: cascadia
+      POSTGRES_DB: cascadia
+    ports:
+      - "5433:5432"
+    volumes:
+      - cascadia-full-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cascadia -d cascadia"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  proxy:
+    image: cascadia-proxy:dev
+    container_name: cascadia-full-proxy
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CASCADIA_LISTEN_ADDR: "0.0.0.0:8080"
+      CASCADIA_DATABASE_URL: "postgres://cascadia:cascadia@postgres:5432/cascadia"
+      CASCADIA_OPENAI_API_KEY: "${OPENAI_API_KEY:-anything}"
+      CASCADIA_OPENAI_BASE_URL: "${CASCADIA_OPENAI_BASE_URL:-https://api.openai.com}"
+      # Phase 7: model strings MUST carry a `provider/` prefix.
+      # Unprefixed strings hard-fail at boot — see crates/proxy/src/model_id.rs
+      # and PLAN.md §9 (2026-05-19 — Phase 7 scoping).
+      CASCADIA_CHEAP_MODEL: "openai/gpt-4o-mini"
+      CASCADIA_EXPENSIVE_MODEL: "openai/gpt-4o"
+      CASCADIA_POLICY_FILE: "/policy/cascadia-policy.json"
+      CASCADIA_CLUSTER_BUCKETS: "4"
+      CASCADIA_LOG_JSON: "false"
+    ports:
+      - "18080:8080"
+    volumes:
+      - cascadia-policy:/policy
+
+  dashboard-api:
+    image: cascadia-dashboard-api:dev
+    container_name: cascadia-full-dashboard-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CASCADIA_DATABASE_URL: "postgres://cascadia:cascadia@postgres:5432/cascadia"
+      CASCADIA_DASHBOARD_CORS_ORIGINS: "http://localhost:3000"
+    ports:
+      - "18082:8080"
+
+  dashboard:
+    image: cascadia-dashboard:dev
+    container_name: cascadia-full-dashboard
+    depends_on:
+      - dashboard-api
+    environment:
+      CASCADIA_DASHBOARD_API_BASE: "http://dashboard-api:8080"
+      CASCADIA_CALIBRATE_USER: "cascadia"
+      # In local dev this can be a known value; on Railway it's the generated
+      # 20-char URL-safe string. Same env-var name in both places.
+      CASCADIA_CALIBRATE_PASS: "${CASCADIA_CALIBRATE_PASS:-localdev}"
+    ports:
+      - "3000:3000"
+
+  judge-worker:
+    image: cascadia-judge-worker:dev
+    container_name: cascadia-full-judge-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CASCADIA_DATABASE_URL: "postgres://cascadia:cascadia@postgres:5432/cascadia"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+    # Override entrypoint args here if running ad-hoc judge invocations.
+    command: ["--provider", "anthropic", "--model", "claude-haiku-4-5"]
+
+  policy-controller:
+    image: cascadia-policy-controller:dev
+    container_name: cascadia-full-policy-controller
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CASCADIA_DATABASE_URL: "postgres://cascadia:cascadia@postgres:5432/cascadia"
+      CASCADIA_POLICY_FILE: "/policy/cascadia-policy.json"
+      CASCADIA_LOOKBACK_MINUTES: "60"
+      CASCADIA_REFIT_INTERVAL_SEC: "300"
+    volumes:
+      - cascadia-policy:/policy
+
+volumes:
+  cascadia-full-postgres:
+  # Rendezvous volume: policy-controller writes the JSON; proxy reads it via
+  # the file watcher in cascade.rs. On Railway this becomes a small shared
+  # volume mounted into both services (or rsync'd via a sidecar — see
+  # PLAN.md decision log on policy-file distribution).
+  cascadia-policy:

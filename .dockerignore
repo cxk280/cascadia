@@ -1,0 +1,44 @@
+# Keep Docker build contexts small and reproducible.
+#
+# All Dockerfiles in deploy/docker/ build from the repo root. This file
+# pares the upload down to only what the COPY statements ask for.
+
+# Rust build artifacts (the Dockerfile re-builds from source).
+target/
+**/*.rs.bk
+
+# Python virtualenvs and caches.
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+
+# Node.js node_modules (the dashboard Dockerfile re-runs `npm ci`).
+**/node_modules/
+
+# Next.js build outputs (rebuilt inside the image).
+dashboard/.next/
+dashboard/out/
+dashboard/tsconfig.tsbuildinfo
+
+# Editor / OS noise.
+.git/
+.gitignore
+.idea/
+.vscode/
+**/.DS_Store
+
+# Local secrets and ad-hoc state.
+.env
+.env.*
+*.local
+/tmp/
+
+# Repo-level docs not needed inside images.
+DIFFERENTIATOR.md
+SOLID.md
+docs/
+deploy/helm/
+bench/

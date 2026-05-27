@@ -1,0 +1,61 @@
+Cascadia LLM gateway is being installed.
+
+1. Wait for the proxy to come up:
+
+   kubectl --namespace {{ .Release.Namespace }} rollout status deployment/{{ include "cascadia.fullname" . }}
+
+2. Port-forward to test locally:
+
+   kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "cascadia.fullname" . }} 8080:{{ .Values.service.port }}
+
+3. Hit the health endpoint:
+
+   curl http://localhost:8080/health
+
+4. Send a chat completion (note: Phase 7 requires `provider/model` prefix in the policy file, but the request body's `model` field is overridden by cascade routing — any non-empty string works):
+
+   curl http://localhost:8080/v1/chat/completions \
+       -H 'Content-Type: application/json' \
+       -d '{"model":"auto","messages":[{"role":"user","content":"hi"}]}'
+
+{{- if and (not .Values.secrets.openaiApiKey) (not .Values.secrets.anthropicApiKey) (not .Values.secrets.groqApiKey) (not .Values.secrets.xaiApiKey) (not .Values.existingSecret) }}
+
+⚠  No upstream API key configured. Set at least one of `secrets.{openaiApiKey,anthropicApiKey,groqApiKey,xaiApiKey}`
+   (or point `existingSecret` at a pre-created Secret) and `helm upgrade` to enable upstream calls.
+{{- end }}
+
+{{- if .Values.networkPolicy.enabled }}
+
+⚠  NetworkPolicy is enabled. The chart ships a default egress rule for DNS so resolution
+   still works, but Postgres + upstream-provider egress is up to you to allowlist in
+   `values.yaml -> networkPolicy.egress`. Without it, the proxy cannot reach its dependencies
+   and `/readyz` will fail.
+{{- end }}
+
+{{- if not .Values.secrets.databaseUrl }}
+{{- if not .Values.existingSecret }}
+
+ℹ  `secrets.databaseUrl` is empty — events will not be persisted. Provide a Postgres URL
+   (e.g. via bitnami/postgresql installed separately) to enable the event log.
+{{- end }}
+{{- end }}
+
+{{- if not .Values.config.persistBodies }}
+
+ℹ  `config.persistBodies` is `false`. Shadow pairs will still be written and the
+   cascade decision metadata is preserved, but the judge worker will see
+   request/response bodies only via the shadow_pairs columns — the events
+   table will not carry verbatim bodies. If you don't carry PII (or you've
+   redacted at the application layer), set `config.persistBodies: true` for
+   the strongest closed-loop quality signal. See the chart README's
+   "Data residency" section for the full trade-off.
+{{- end }}
+
+⚠  Chart version: {{ .Chart.Version }} (pre-1.0). The values.yaml schema is
+   NOT stable between minor versions. Lock the chart by `git checkout <tag>`
+   *before* every `helm upgrade` — `helm install --version` only constrains
+   registry-based installs, not the local-path install used here. Read
+   CHANGELOG.md before upgrading. Pulling from `main` unlocked is the
+   #1 cause of 3am pages.
+
+Docs: {{ .Chart.Home }}

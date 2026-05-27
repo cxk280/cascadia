@@ -1,0 +1,16 @@
+# Railway config for the `proxy` service.
+#
+# Point the Railway service's "Config-as-Code Path" setting at this file
+# (Settings -> Service -> Config-as-Code Path:
+# deploy/railway/proxy.railway.toml), with the repo root as the source.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "deploy/docker/proxy.Dockerfile"
+
+[deploy]
+startCommand = "/usr/local/bin/cascadia-proxy"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

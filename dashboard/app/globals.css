@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #0b0e13;
+  color: #e6e8ec;
+  font-feature-settings: "ss01" on, "cv11" on;
+}
+
+/* WCAG 1.4.11 — forced-colors / Windows High Contrast support.
+   Activity-page status pills (cheap / escalated / tool-use) and the
+   Pareto-chart legend rely on color-only differentiation. Under
+   forced-colors, browsers clobber our color palette and every pill turns
+   ButtonText. Restore differentiation with text-decoration so the three
+   states stay visually distinct, and surface non-decorative icons via the
+   ::before pseudo-element so colorblind users on standard displays also
+   benefit. */
+@media (forced-colors: active) {
+  /* Activity-page status pills */
+  .text-accent-warn::before {
+    content: "⚠ ";
+  }
+  .text-accent::before {
+    content: "● ";
+  }
+  /* Pareto chart degrades to monochrome under forced-colors. The
+     screen-reader-only data table inside ParetoChart provides the numeric
+     fallback. */
+}
