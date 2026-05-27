@@ -9,6 +9,8 @@ terminates when the queue is empty.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 
 from cascadia_judge.executor import AsyncioJudgeExecutor
@@ -98,6 +100,78 @@ async def test_max_cycles_terminates_run_forever() -> None:
 
     assert store.judged_ids() == {pair_id}
     assert len(store.all_verdicts()) == 1
+
+
+@pytest.mark.asyncio
+async def test_drain_persists_ensemble_score() -> None:
+    # EC-O1: the poller now persists the bias-corrected ensemble score per
+    # pair so the policy controller can tune on it (instead of a raw AVG over
+    # judge_scores rows).
+    store = InMemoryShadowPairStorage()
+    pid = store.add_pair(_pair("p"))
+    orchestrator = _make_orchestrator(num_responses=1)
+    poller = Poller(
+        storage=store, orchestrator=orchestrator,
+        config=PollerConfig(batch_size=10, judge_names=("pairwise_preference_v1",)),
+    )
+    await poller.drain()
+    ens = store.ensemble_for(pid)
+    assert ens is not None
+    score, confidence = ens
+    # Single judge verdict score=0.7, confidence=0.8 → weighted mean 0.7.
+    assert score == pytest.approx(0.7)
+    assert confidence == pytest.approx(0.8)
+
+
+@pytest.mark.asyncio
+async def test_fetch_pending_claims_rows_so_a_second_fetch_skips_them() -> None:
+    # EC-O3: a claimed (fresh) row must not be handed out again, so a second
+    # poller replica doesn't re-judge it and double-pay for LLM calls.
+    store = InMemoryShadowPairStorage()
+    ids = {store.add_pair(_pair(f"p{i}")) for i in range(2)}
+    first = await store.fetch_pending(10)
+    assert {p.pair_id for p in first} == ids
+    # Second fetch before anything is marked judged → claimed, so empty.
+    assert await store.fetch_pending(10) == ()
+    # Releasing a claim makes the pair available again (failed-pair retry).
+    one = next(iter(ids))
+    await store.release_claims([one])
+    again = await store.fetch_pending(10)
+    assert {p.pair_id for p in again} == {one}
+
+
+@pytest.mark.asyncio
+async def test_stale_claim_is_reclaimable() -> None:
+    # A claim older than the reclaim window (crashed worker) is re-claimable.
+    store = InMemoryShadowPairStorage(reclaim_after=timedelta(0))
+    pid = store.add_pair(_pair("p"))
+    await store.fetch_pending(10)  # claims it
+    again = await store.fetch_pending(10)
+    assert {p.pair_id for p in again} == {pid}
+
+
+class _FailingWriteStorage(InMemoryShadowPairStorage):
+    async def write_verdicts(self, pair_id, verdicts):  # type: ignore[override]
+        raise RuntimeError("boom")
+
+
+@pytest.mark.asyncio
+async def test_failed_pair_releases_its_claim_for_retry() -> None:
+    store = _FailingWriteStorage()
+    pid = store.add_pair(_pair("p"))
+    orchestrator = _make_orchestrator(num_responses=1)
+    poller = Poller(
+        storage=store, orchestrator=orchestrator,
+        config=PollerConfig(
+            batch_size=10, max_cycles=1, idle_sleep_s=0.0,
+            judge_names=("pairwise_preference_v1",),
+        ),
+    )
+    await poller.run_forever()
+    assert store.judged_ids() == set()  # not marked judged on failure
+    # Claim was released → the pair is fetchable again next cycle.
+    again = await store.fetch_pending(10)
+    assert {p.pair_id for p in again} == {pid}
 
 
 @pytest.mark.asyncio

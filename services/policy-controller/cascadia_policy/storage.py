@@ -40,21 +40,31 @@ class AsyncpgStatsReader(StatsReader):
 
     async def cluster_stats(self, lookback: timedelta) -> Mapping[str, ClusterStats]:
         # We want, per cluster:
-        #   - mean judge score (average across all judges, across all pairs
-        #     in window)
-        #   - sample size (# of judge_scores rows)
+        #   - mean ensemble score (the bias-corrected per-pair score the judge
+        #     worker persists on shadow_pairs.ensemble_score)
+        #   - sample size (# of judged *pairs*, not judge_scores rows)
         #   - escalation rate from events
+        # We average shadow_pairs.ensemble_score rather than the raw
+        # judge_scores.score: the ensemble already drops self-preferring judges,
+        # folds position-swapped siblings, and excludes errored verdicts, so the
+        # controller tunes on the same statistic the panel is calibrated against
+        # (raw AVG(js.score) counted error rows as 0, double-counted swapped
+        # siblings, and included self-preferring judges). NULL ensemble means
+        # "no usable signal" → excluded. COUNT here is therefore per-pair, so
+        # `min_sample_size` means pairs, matching the operator's mental model.
         # Compute the cutoff timestamp here rather than `NOW() - $1` in SQL —
         # asyncpg's binary protocol gets type inference wrong on NOW() minus a
         # bound parameter ("operator does not exist: timestamptz > interval").
         cutoff = datetime.now(timezone.utc) - lookback
         sql = """
         WITH judged AS (
-            SELECT sp.cluster_id, AVG(js.score) AS mean_score, COUNT(*) AS sample_size
-              FROM shadow_pairs sp
-              JOIN judge_scores js ON js.pair_id = sp.pair_id
-             WHERE sp.occurred_at > $1
-             GROUP BY sp.cluster_id
+            SELECT cluster_id,
+                   AVG(ensemble_score) AS mean_score,
+                   COUNT(*) AS sample_size
+              FROM shadow_pairs
+             WHERE occurred_at > $1
+               AND ensemble_score IS NOT NULL
+             GROUP BY cluster_id
         ),
         events_agg AS (
             SELECT cluster_id,
