@@ -21,7 +21,7 @@ use crate::upstream::{UpstreamResponse, UpstreamStreamResponse};
 const KNOWN_NON_OPENAI_HOSTS: &[&str] = &[
     "api.anthropic.com",
     "generativelanguage.googleapis.com", // Gemini
-    "bedrock-runtime", // any AWS Bedrock regional host substring
+    "bedrock-runtime",                   // any AWS Bedrock regional host substring
 ];
 
 fn detect_misconfigured_host(base_url: &str) -> Option<&'static str> {

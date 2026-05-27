@@ -87,8 +87,7 @@ pub async fn chat_completions(
         .map(|a| !a.is_empty())
         .unwrap_or(false);
     if !messages_ok {
-        let mut msg =
-            String::from("field `messages` is required and must be a non-empty array");
+        let mut msg = String::from("field `messages` is required and must be a non-empty array");
         if request.get("prompt").is_some() {
             msg.push_str(
                 "; the request carries `prompt`, which is the legacy /v1/completions \
@@ -187,7 +186,8 @@ pub async fn chat_completions(
                     elapsed_ms: elapsed.as_millis() as i32,
                     // `u32 as i32` wraps to a negative count for values above
                     // i32::MAX, corrupting usage analytics. Clamp instead.
-                    prompt_tokens: usage.map(|u| i32::try_from(u.prompt_tokens).unwrap_or(i32::MAX)),
+                    prompt_tokens: usage
+                        .map(|u| i32::try_from(u.prompt_tokens).unwrap_or(i32::MAX)),
                     completion_tokens: usage
                         .map(|u| i32::try_from(u.completion_tokens).unwrap_or(i32::MAX)),
                     request_body: persist_bodies.then(|| request.clone()),
@@ -222,9 +222,7 @@ pub async fn chat_completions(
             rewrite_response_model(&mut final_body, &inbound_model);
             let mut response = Json(final_body).into_response();
             if let Ok(hv) = axum::http::HeaderValue::from_str(&final_model) {
-                response
-                    .headers_mut()
-                    .insert("x-cascadia-served-model", hv);
+                response.headers_mut().insert("x-cascadia-served-model", hv);
             }
             response.headers_mut().insert(
                 "x-cascadia-served-provider",
@@ -238,9 +236,7 @@ pub async fn chat_completions(
             // layer can log this header value alongside the user's session
             // to later run the deletion recipe in SECURITY.md.
             if let Ok(hv) = axum::http::HeaderValue::from_str(&request_id.to_string()) {
-                response
-                    .headers_mut()
-                    .insert("x-cascadia-request-id", hv);
+                response.headers_mut().insert("x-cascadia-request-id", hv);
             }
             Ok(response)
         }
@@ -248,8 +244,8 @@ pub async fn chat_completions(
             let error_code = error_code_for(&err);
             // Try to attribute the failure to whichever provider would have
             // served the cluster's cheap tier, falling back to "unknown".
-            let provider = provider_for_cluster(state.policy(), &cluster_for_error)
-                .unwrap_or("unknown");
+            let provider =
+                provider_for_cluster(state.policy(), &cluster_for_error).unwrap_or("unknown");
             emit_event_failure(
                 &state,
                 request_id,
@@ -293,8 +289,8 @@ async fn stream_chat_completions(
         Ok(o) => o,
         Err(err) => {
             let error_code = error_code_for(&err);
-            let provider = provider_for_cluster(state.policy(), &cluster_for_error)
-                .unwrap_or("unknown");
+            let provider =
+                provider_for_cluster(state.policy(), &cluster_for_error).unwrap_or("unknown");
             emit_event_failure(
                 &state,
                 request_id,
@@ -347,19 +343,13 @@ async fn stream_chat_completions(
         while let Some(item) = byte_stream.next().await {
             match item {
                 Ok(b) => {
-                    if tx
-                        .send(Ok(b))
-                        .await
-                        .is_err()
-                    {
+                    if tx.send(Ok(b)).await.is_err() {
                         // Client disconnected; abandon the stream.
                         break;
                     }
                 }
                 Err(err) => {
-                    let _ = tx
-                        .send(Err(std::io::Error::other(err.to_string())))
-                        .await;
+                    let _ = tx.send(Err(std::io::Error::other(err.to_string()))).await;
                     break;
                 }
             }
@@ -515,7 +505,10 @@ fn rewrite_response_model(body: &mut Value, inbound_model: &str) {
         return;
     }
     if let Some(obj) = body.as_object_mut() {
-        obj.insert("model".to_string(), Value::String(inbound_model.to_string()));
+        obj.insert(
+            "model".to_string(),
+            Value::String(inbound_model.to_string()),
+        );
     }
 }
 

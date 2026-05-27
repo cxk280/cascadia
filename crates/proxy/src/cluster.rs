@@ -102,6 +102,10 @@ mod tests {
             let r = request(&format!("test prompt {i}"));
             seen.insert(classify(4, &r));
         }
-        assert_eq!(seen.len(), 4, "expected all buckets to be hit, saw {seen:?}");
+        assert_eq!(
+            seen.len(),
+            4,
+            "expected all buckets to be hit, saw {seen:?}"
+        );
     }
 }

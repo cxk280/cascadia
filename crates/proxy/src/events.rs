@@ -104,27 +104,30 @@ pub async fn init(database_url: &str) -> anyhow::Result<(EventSender, PgPool)> {
         .connect(database_url)
         .await?;
 
-    sqlx::migrate!("./migrations").run(&pool).await.map_err(|e| {
-        // Common operational failure: someone dropped `_sqlx_migrations`
-        // to "reset state" but left the data tables. Sqlx then re-runs
-        // every migration and fails on the first CREATE TABLE because the
-        // table already exists. The raw error is "relation X already
-        // exists" which doesn't hint at the fix. Detect the pattern and
-        // emit a recovery hint.
-        let raw = e.to_string();
-        if raw.contains("already exists") || raw.contains("relation") {
-            anyhow::anyhow!(
-                "migration drift detected: {raw}.\n\
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .map_err(|e| {
+            // Common operational failure: someone dropped `_sqlx_migrations`
+            // to "reset state" but left the data tables. Sqlx then re-runs
+            // every migration and fails on the first CREATE TABLE because the
+            // table already exists. The raw error is "relation X already
+            // exists" which doesn't hint at the fix. Detect the pattern and
+            // emit a recovery hint.
+            let raw = e.to_string();
+            if raw.contains("already exists") || raw.contains("relation") {
+                anyhow::anyhow!(
+                    "migration drift detected: {raw}.\n\
                  Likely cause: the `_sqlx_migrations` tracking table was \
                  dropped but data tables remain. Recovery options:\n\
                  1. Wipe the DB entirely and let sqlx re-run all migrations.\n\
                  2. Manually re-populate `_sqlx_migrations` with the \
                     versions you've already applied (see crates/proxy/migrations/)."
-            )
-        } else {
-            anyhow::Error::from(e).context("running sqlx migrations")
-        }
-    })?;
+                )
+            } else {
+                anyhow::Error::from(e).context("running sqlx migrations")
+            }
+        })?;
     tracing::info!("postgres migrations applied");
 
     let (tx, rx) = mpsc::channel::<LogEntry>(2048);

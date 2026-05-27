@@ -51,9 +51,11 @@ impl IntoResponse for AppError {
                 "invalid_request_error",
                 "bad_request",
             ),
-            AppError::Unauthorized(_) => {
-                (StatusCode::UNAUTHORIZED, "authentication_error", "unauthorized")
-            }
+            AppError::Unauthorized(_) => (
+                StatusCode::UNAUTHORIZED,
+                "authentication_error",
+                "unauthorized",
+            ),
             AppError::MethodNotAllowed(_) => (
                 StatusCode::METHOD_NOT_ALLOWED,
                 "invalid_request_error",
@@ -69,16 +71,8 @@ impl IntoResponse for AppError {
                 "upstream_error",
                 "upstream_status",
             ),
-            AppError::Upstream(_) => (
-                StatusCode::BAD_GATEWAY,
-                "upstream_error",
-                "upstream_error",
-            ),
-            AppError::NotFound(_) => (
-                StatusCode::NOT_FOUND,
-                "invalid_request_error",
-                "not_found",
-            ),
+            AppError::Upstream(_) => (StatusCode::BAD_GATEWAY, "upstream_error", "upstream_error"),
+            AppError::NotFound(_) => (StatusCode::NOT_FOUND, "invalid_request_error", "not_found"),
             AppError::Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal_error",

@@ -135,7 +135,11 @@ pub async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
     (
         status,
         Json(HealthResponse {
-            status: if failed.is_empty() { "ok" } else { "unavailable" },
+            status: if failed.is_empty() {
+                "ok"
+            } else {
+                "unavailable"
+            },
             service: "cascadia-proxy",
             version: env!("CARGO_PKG_VERSION"),
             passed_checks: passed,

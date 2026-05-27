@@ -161,8 +161,7 @@ fn stream_chat(req: &Value) -> Response {
     events.push(Bytes::from(format!("data: {final_chunk}\n\n")));
     events.push(Bytes::from_static(b"data: [DONE]\n\n"));
 
-    let stream =
-        futures_util::stream::iter(events.into_iter().map(Ok::<Bytes, std::io::Error>));
+    let stream = futures_util::stream::iter(events.into_iter().map(Ok::<Bytes, std::io::Error>));
     Response::builder()
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, "text/event-stream")

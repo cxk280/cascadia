@@ -65,7 +65,10 @@ pub async fn forward(
     } else {
         anthropic_resp
     };
-    Ok(UpstreamResponse { status, body: openai_body })
+    Ok(UpstreamResponse {
+        status,
+        body: openai_body,
+    })
 }
 
 // =========================================================================
@@ -166,9 +169,7 @@ pub async fn forward_stream(
                             }
                         }
                         if translator.is_done() {
-                            let _ = tx
-                                .send(Ok(Bytes::from_static(b"data: [DONE]\n\n")))
-                                .await;
+                            let _ = tx.send(Ok(Bytes::from_static(b"data: [DONE]\n\n"))).await;
                             return;
                         }
                     }
@@ -190,14 +191,11 @@ pub async fn forward_stream(
         // Upstream closed cleanly without an explicit message_stop — emit
         // the terminator so the OpenAI client doesn't hang.
         if !translator.terminated {
-            let _ = tx
-                .send(Ok(Bytes::from_static(b"data: [DONE]\n\n")))
-                .await;
+            let _ = tx.send(Ok(Bytes::from_static(b"data: [DONE]\n\n"))).await;
         }
     });
 
-    let stream =
-        futures_util::stream::poll_fn(move |cx| rx.poll_recv(cx));
+    let stream = futures_util::stream::poll_fn(move |cx| rx.poll_recv(cx));
     Ok(UpstreamStreamResponse {
         status,
         body_stream: Box::pin(stream),
@@ -521,7 +519,9 @@ pub fn translate_request(req: &Value) -> Value {
     }
     out.insert(
         "max_tokens".to_string(),
-        req.get("max_tokens").cloned().unwrap_or(json!(DEFAULT_MAX_TOKENS)),
+        req.get("max_tokens")
+            .cloned()
+            .unwrap_or(json!(DEFAULT_MAX_TOKENS)),
     );
 
     // OpenAI: messages[]; system messages concatenated → Anthropic system.
@@ -662,10 +662,8 @@ fn merge_into_user_message(messages: &mut Vec<Value>, block: Value) {
                 }
                 Some(Value::String(s)) => {
                     let prior = std::mem::take(s);
-                    *content.unwrap() = Value::Array(vec![
-                        json!({ "type": "text", "text": prior }),
-                        block,
-                    ]);
+                    *content.unwrap() =
+                        Value::Array(vec![json!({ "type": "text", "text": prior }), block]);
                     return;
                 }
                 _ => {}
@@ -749,24 +747,36 @@ pub fn translate_response(anthropic: &Value, original_req: &Value) -> Value {
 
     let (text, tool_calls) = collect_content_blocks(anthropic.get("content"));
     let finish_reason = map_stop_reason(
-        anthropic.get("stop_reason").and_then(Value::as_str).unwrap_or(""),
+        anthropic
+            .get("stop_reason")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
         !tool_calls.is_empty(),
     );
 
     let mut message = Map::new();
     message.insert("role".to_string(), json!("assistant"));
-    message.insert("content".to_string(), if text.is_empty() && !tool_calls.is_empty() {
-        Value::Null
-    } else {
-        json!(text)
-    });
+    message.insert(
+        "content".to_string(),
+        if text.is_empty() && !tool_calls.is_empty() {
+            Value::Null
+        } else {
+            json!(text)
+        },
+    );
     if !tool_calls.is_empty() {
         message.insert("tool_calls".to_string(), Value::Array(tool_calls));
     }
 
     let usage = anthropic.get("usage").cloned().unwrap_or(json!({}));
-    let prompt_tokens = usage.get("input_tokens").and_then(Value::as_u64).unwrap_or(0);
-    let completion_tokens = usage.get("output_tokens").and_then(Value::as_u64).unwrap_or(0);
+    let prompt_tokens = usage
+        .get("input_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let completion_tokens = usage
+        .get("output_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
 
     json!({
         "id": id,
@@ -974,7 +984,10 @@ mod tests {
         let out = translate_response(&anthropic, &json!({}));
         assert_eq!(out["id"], json!("msg_01"));
         assert_eq!(out["model"], json!("claude-haiku-4-5"));
-        assert_eq!(out["choices"][0]["message"]["content"], json!("hello world"));
+        assert_eq!(
+            out["choices"][0]["message"]["content"],
+            json!("hello world")
+        );
         assert_eq!(out["choices"][0]["finish_reason"], json!("stop"));
         assert_eq!(out["usage"]["prompt_tokens"], json!(5));
         assert_eq!(out["usage"]["completion_tokens"], json!(2));
@@ -1009,8 +1022,13 @@ mod tests {
             "usage": {"input_tokens": 10, "output_tokens": 8}
         });
         let out = translate_response(&anthropic, &json!({}));
-        assert_eq!(out["choices"][0]["message"]["content"], json!("Looking up..."));
-        let tool_calls = out["choices"][0]["message"]["tool_calls"].as_array().unwrap();
+        assert_eq!(
+            out["choices"][0]["message"]["content"],
+            json!("Looking up...")
+        );
+        let tool_calls = out["choices"][0]["message"]["tool_calls"]
+            .as_array()
+            .unwrap();
         assert_eq!(tool_calls.len(), 1);
         assert_eq!(tool_calls[0]["id"], json!("toolu_01"));
         assert_eq!(tool_calls[0]["function"]["name"], json!("get_weather"));
@@ -1028,11 +1046,13 @@ mod tests {
             "messages": [{"role": "user", "content": "hi"}],
             "response_format": {"type": "json_schema", "json_schema": {"name": "x"}}
         });
-        let err = translate_request_checked(&req)
-            .expect_err("json_schema must be rejected");
+        let err = translate_request_checked(&req).expect_err("json_schema must be rejected");
         let msg = err.to_string();
         assert!(msg.contains("json_schema"), "got: {msg}");
-        assert!(msg.contains("tool_use"), "expected remediation hint, got: {msg}");
+        assert!(
+            msg.contains("tool_use"),
+            "expected remediation hint, got: {msg}"
+        );
     }
 
     #[test]
@@ -1076,7 +1096,8 @@ mod tests {
         let out = translate_request_checked(&req).unwrap();
         // No system directive injected when caller didn't ask for JSON.
         assert!(
-            !out.get("system").map(|s| s.as_str().unwrap_or("").contains("valid JSON"))
+            !out.get("system")
+                .map(|s| s.as_str().unwrap_or("").contains("valid JSON"))
                 .unwrap_or(false),
             "should not inject JSON directive when caller didn't ask"
         );
@@ -1216,13 +1237,17 @@ mod tests {
         ));
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0]["choices"][0]["finish_reason"], json!("stop"));
-        assert!(chunks[0]["choices"][0]["delta"].as_object().unwrap().is_empty());
+        assert!(chunks[0]["choices"][0]["delta"]
+            .as_object()
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
     fn stream_translator_message_stop_sets_terminated() {
         let mut t = AnthropicStreamTranslator::new("claude-haiku-4-5".to_string());
-        let chunks = t.process_event_block(&block("message_stop", &json!({"type": "message_stop"})));
+        let chunks =
+            t.process_event_block(&block("message_stop", &json!({"type": "message_stop"})));
         assert!(chunks.is_empty());
         assert!(t.is_done());
     }
@@ -1240,12 +1265,27 @@ mod tests {
         let mut t = AnthropicStreamTranslator::new("claude-haiku-4-5".to_string());
         let mut all: Vec<Value> = Vec::new();
         for (event, data) in &[
-            ("message_start", json!({"message": {"id": "msg_xyz", "model": "claude-haiku-4-5"}})),
-            ("content_block_start", json!({"index": 0, "content_block": {"type": "text", "text": ""}})),
-            ("content_block_delta", json!({"index": 0, "delta": {"type": "text_delta", "text": "Hi"}})),
-            ("content_block_delta", json!({"index": 0, "delta": {"type": "text_delta", "text": " there"}})),
+            (
+                "message_start",
+                json!({"message": {"id": "msg_xyz", "model": "claude-haiku-4-5"}}),
+            ),
+            (
+                "content_block_start",
+                json!({"index": 0, "content_block": {"type": "text", "text": ""}}),
+            ),
+            (
+                "content_block_delta",
+                json!({"index": 0, "delta": {"type": "text_delta", "text": "Hi"}}),
+            ),
+            (
+                "content_block_delta",
+                json!({"index": 0, "delta": {"type": "text_delta", "text": " there"}}),
+            ),
             ("content_block_stop", json!({"index": 0})),
-            ("message_delta", json!({"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 2}})),
+            (
+                "message_delta",
+                json!({"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 2}}),
+            ),
             ("message_stop", json!({"type": "message_stop"})),
         ] {
             all.extend(t.process_event_block(&block(event, data)));
@@ -1264,12 +1304,27 @@ mod tests {
         let mut t = AnthropicStreamTranslator::new("claude-haiku-4-5".to_string());
         let mut all: Vec<Value> = Vec::new();
         for (event, data) in &[
-            ("message_start", json!({"message": {"id": "msg_t", "model": "claude-haiku-4-5"}})),
-            ("content_block_start", json!({"index": 0, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "get_weather", "input": {}}})),
-            ("content_block_delta", json!({"index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"city\":"}})),
-            ("content_block_delta", json!({"index": 0, "delta": {"type": "input_json_delta", "partial_json": " \"SF\"}"}})),
+            (
+                "message_start",
+                json!({"message": {"id": "msg_t", "model": "claude-haiku-4-5"}}),
+            ),
+            (
+                "content_block_start",
+                json!({"index": 0, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "get_weather", "input": {}}}),
+            ),
+            (
+                "content_block_delta",
+                json!({"index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"city\":"}}),
+            ),
+            (
+                "content_block_delta",
+                json!({"index": 0, "delta": {"type": "input_json_delta", "partial_json": " \"SF\"}"}}),
+            ),
             ("content_block_stop", json!({"index": 0})),
-            ("message_delta", json!({"delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 5}})),
+            (
+                "message_delta",
+                json!({"delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 5}}),
+            ),
             ("message_stop", json!({"type": "message_stop"})),
         ] {
             all.extend(t.process_event_block(&block(event, data)));
