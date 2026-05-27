@@ -113,7 +113,9 @@ jobs:
       - checkout
       - run:
           name: Install Railway CLI
-          command: npm i -g @railway/cli@latest
+          # cimg/node runs as non-root; global npm install needs sudo
+          # (passwordless on cimg images).
+          command: sudo npm i -g @railway/cli@latest
       - run:
           name: Deploy services to << parameters.env >>
           command: |
