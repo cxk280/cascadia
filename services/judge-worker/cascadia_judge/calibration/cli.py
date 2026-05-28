@@ -18,7 +18,12 @@ from dataclasses import asdict
 from pathlib import Path
 
 from cascadia_judge.calibration.dataset import load_dataset
-from cascadia_judge.calibration.runner import CalibrationResult, run_calibration
+from cascadia_judge.calibration.runner import (
+    CalibrationResult,
+    MultiAxisResult,
+    run_calibration,
+    run_multi_axis_calibration,
+)
 from cascadia_judge.executor import AsyncioJudgeExecutor
 from cascadia_judge.judges import REGISTRY
 from cascadia_judge.llm.base import LLMClient
@@ -92,6 +97,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--concision-weight", type=float, default=0.0,
                         help="Phase 5.2 concision penalty applied to each ensemble score "
                              "(default 0.0 = disabled).")
+    parser.add_argument("--multi-axis", action="store_true",
+                        help="Report a τ-b *vector* (neutral / concision-weighted / "
+                             "completeness-weighted) plus panel-internal κ, instead of a "
+                             "single τ-b. The concision magnitude is --concision-weight "
+                             "(defaults to 0.30, the characterized pilot correction, when "
+                             "left at 0).")
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)
 
@@ -105,7 +116,30 @@ def main(argv: list[str] | None = None) -> int:
         llm_factory=factory,
     )
 
-    result: CalibrationResult = asyncio.run(
+    if args.multi_axis:
+        # The completeness axis needs a non-zero magnitude to differ from the
+        # neutral axis; fall back to the characterized 0.30 when unset.
+        axis_weight = args.concision_weight if args.concision_weight > 0 else 0.30
+        multi: MultiAxisResult = asyncio.run(
+            run_multi_axis_calibration(
+                dataset, orchestrator,
+                judge_names=args.judges,
+                concision_weight=axis_weight,
+            ),
+        )
+        result: CalibrationResult = CalibrationResult(rows=multi.rows, metrics=multi.metrics)
+        report_dict: dict[str, object] = {
+            "metrics": asdict(multi.metrics),
+            "multi_axis": multi.multi_axis.as_dict(),
+        }
+        json.dump(report_dict, sys.stdout, indent=2, default=_json_default)
+        sys.stdout.write("\n")
+        if args.out is not None:
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(json.dumps(multi.to_dict(), indent=2, default=_json_default))
+        return _tau_gate(result, args.tau_min)
+
+    result = asyncio.run(
         run_calibration(
             dataset, orchestrator,
             judge_names=args.judges,
@@ -121,11 +155,15 @@ def main(argv: list[str] | None = None) -> int:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(result.to_dict(), indent=2, default=_json_default))
 
-    if args.tau_min is not None:
+    return _tau_gate(result, args.tau_min)
+
+
+def _tau_gate(result: CalibrationResult, tau_min: float | None) -> int:
+    if tau_min is not None:
         tau = result.metrics.kendall_tau_b
-        if tau is None or tau < args.tau_min:
+        if tau is None or tau < tau_min:
             print(
-                f"calibration FAILED: Kendall's τ-b = {tau!r} < {args.tau_min}",
+                f"calibration FAILED: Kendall's τ-b = {tau!r} < {tau_min}",
                 file=sys.stderr,
             )
             return 2

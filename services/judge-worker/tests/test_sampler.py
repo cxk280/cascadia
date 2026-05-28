@@ -11,8 +11,10 @@ from __future__ import annotations
 
 from cascadia_judge.calibration.sampler import (
     ATTENTION_CHECKS,
+    DEFAULT_MODEL_TIER_RANKS,
     CandidatePair,
     SamplerConfig,
+    _model_tier_gap,
     materialize_attention_checks,
     select_batch,
 )
@@ -25,18 +27,22 @@ def _pair(
     ensemble_score: float | None = None,
     ensemble_confidence: float | None = None,
     ensemble_position_bias: float | None = None,
+    cheap_model: str = "cheap-m",
+    expensive_model: str = "expensive-m",
+    human_label_ordinal: float | None = None,
 ) -> CandidatePair:
     return CandidatePair(
         request_id=request_id,
         prompt=f"prompt-{request_id}",
-        cheap_model="cheap-m",
+        cheap_model=cheap_model,
         cheap_response="A",
-        expensive_model="expensive-m",
+        expensive_model=expensive_model,
         expensive_response="B",
         cluster_id=cluster_id,
         ensemble_score=ensemble_score,
         ensemble_confidence=ensemble_confidence,
         ensemble_position_bias=ensemble_position_bias,
+        human_label_ordinal=human_label_ordinal,
     )
 
 
@@ -110,3 +116,71 @@ def test_round1_falls_back_to_uniform_for_no_cluster() -> None:
     cfg = SamplerConfig(target_batch_size=3, rng_seed=1)
     batch = select_batch(candidates, config=cfg, round_number=1)
     assert len(batch) == 3
+
+
+# --- Task 3: discriminating-pair strategy ---------------------------------
+
+
+def test_model_tier_gap_longest_substring_match() -> None:
+    # gpt-4o-mini must resolve to the mini tier, not gpt-4o, so the gap to
+    # gpt-4o is small but the gap to gpt-3.5 (a real quality drop) is large.
+    small = _model_tier_gap("openai/gpt-4o-mini", "openai/gpt-4o", DEFAULT_MODEL_TIER_RANKS)
+    large = _model_tier_gap("openai/gpt-3.5-turbo", "openai/gpt-4o", DEFAULT_MODEL_TIER_RANKS)
+    assert 0.0 < small < large <= 1.0
+
+
+def test_model_tier_gap_unknown_model_is_zero() -> None:
+    # An unrecognized model never inflates discrimination.
+    assert _model_tier_gap("mystery/model-x", "openai/gpt-4o", DEFAULT_MODEL_TIER_RANKS) == 0.0
+
+
+def test_discrimination_prefers_large_quality_gap_in_round_one() -> None:
+    # Round 1, discrimination strategy: a big-gap pair (gpt-3.5 → gpt-4o)
+    # outranks a both-fine pair (gpt-4o-mini → gpt-4o) with NO ensemble
+    # scores, because the model-tier signal works off names alone.
+    big_gap = _pair("big", "c0", cheap_model="openai/gpt-3.5-turbo", expensive_model="openai/gpt-4o")
+    small_gap = _pair("small", "c0", cheap_model="openai/gpt-4o-mini", expensive_model="openai/gpt-4o")
+    cfg = SamplerConfig(target_batch_size=1, selection_strategy="discrimination")
+    batch = select_batch([small_gap, big_gap], config=cfg, round_number=1)
+    assert [p.request_id for p in batch] == ["big"]
+
+
+def test_discrimination_rewards_clear_winner_over_tie() -> None:
+    # Same models → tier gap is equal; the pair where the ensemble sees a
+    # clear winner (far from 0.5) is more discriminating than a coin-flip tie.
+    clear = _pair("clear", "c0", cheap_model="openai/gpt-4o-mini",
+                  expensive_model="openai/gpt-4o", ensemble_score=0.95)
+    tie = _pair("tie", "c0", cheap_model="openai/gpt-4o-mini",
+                expensive_model="openai/gpt-4o", ensemble_score=0.5)
+    cfg = SamplerConfig(target_batch_size=1, selection_strategy="discrimination")
+    batch = select_batch([tie, clear], config=cfg, round_number=2)
+    assert [p.request_id for p in batch] == ["clear"]
+
+
+def test_discrimination_chases_ensemble_human_disagreement() -> None:
+    # Two pairs identical except one has the ensemble disagreeing with the
+    # human label (ensemble says cheap wins, human said b/expensive wins).
+    agree = _pair("agree", "c0", cheap_model="openai/gpt-4o-mini",
+                  expensive_model="openai/gpt-4o", ensemble_score=0.9,
+                  human_label_ordinal=1.0)   # both say "a" → no disagreement
+    disagree = _pair("disagree", "c0", cheap_model="openai/gpt-4o-mini",
+                     expensive_model="openai/gpt-4o", ensemble_score=0.9,
+                     human_label_ordinal=0.0)  # human says "b" → large gap
+    cfg = SamplerConfig(target_batch_size=1, selection_strategy="discrimination")
+    batch = select_batch([agree, disagree], config=cfg, round_number=3)
+    assert [p.request_id for p in batch] == ["disagree"]
+
+
+def test_discrimination_opposite_of_uncertainty_on_ties() -> None:
+    # A near-tie pair is HIGH uncertainty but LOW discrimination; the two
+    # strategies should rank the same two pairs in opposite order.
+    tie = _pair("tie", "c0", cheap_model="openai/gpt-4o-mini",
+                expensive_model="openai/gpt-4o", ensemble_score=0.5,
+                ensemble_confidence=0.1)
+    decisive = _pair("decisive", "c0", cheap_model="openai/gpt-3.5-turbo",
+                     expensive_model="openai/gpt-4o", ensemble_score=0.95,
+                     ensemble_confidence=0.95)
+    unc = SamplerConfig(target_batch_size=1, selection_strategy="uncertainty")
+    disc = SamplerConfig(target_batch_size=1, selection_strategy="discrimination")
+    assert select_batch([tie, decisive], config=unc, round_number=2)[0].request_id == "tie"
+    assert select_batch([tie, decisive], config=disc, round_number=2)[0].request_id == "decisive"

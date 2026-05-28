@@ -161,3 +161,140 @@ def _discretize(score: float, tie_window: tuple[float, float]) -> str:
     if score <= low:
         return "b"
     return "tie"
+
+
+# ---------------------------------------------------------------------------
+# Multi-axis reporting (Task 3 — quality vector, not a single number).
+#
+# The 30-pair pilot reported one τ-b and it landed ≈ 0, which reads as "the
+# judge is worthless" when the real story is subtler: the panel and humans
+# *agree on which answer is more complete* but *split on whether brevity or
+# completeness is "better"*. A single τ-b collapses that distinction. Here we
+# report the same agreement under three quality priors — neutral, concision-
+# weighted, completeness-weighted — plus the panel's internal κ, so the
+# operator can see which dimension the judge actually tracks and pick the one
+# to optimize. The concision adjustment is linear in its weight, so the
+# completeness axis is just the concision adjustment applied in reverse; no
+# extra LLM calls are needed beyond the single evaluation pass.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MultiAxisMetrics:
+    n: int
+    concision_weight: float
+    tau_b_unweighted: float | None
+    tau_b_concision_weighted: float | None
+    tau_b_completeness_weighted: float | None
+    panel_internal_kappa: float | None  # mean pairwise Cohen's κ across judge models
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "n": self.n,
+            "concision_weight": self.concision_weight,
+            "tau_b_unweighted": self.tau_b_unweighted,
+            "tau_b_concision_weighted": self.tau_b_concision_weighted,
+            "tau_b_completeness_weighted": self.tau_b_completeness_weighted,
+            "panel_internal_kappa": self.panel_internal_kappa,
+        }
+
+
+def cohens_kappa(a: Sequence[str], b: Sequence[str]) -> float | None:
+    """Two-rater Cohen's κ over categorical labels on the same items.
+
+    Returns None when expected agreement is 1.0 (zero denominator — both
+    raters always pick the same single category) or when there are no items.
+    """
+
+    if len(a) != len(b):
+        raise ValueError("rater sequences must align")
+    n = len(a)
+    if n == 0:
+        return None
+    categories = set(a) | set(b)
+    po = sum(1 for x, y in zip(a, b) if x == y) / n
+    pe = 0.0
+    for cat in categories:
+        pe += (a.count(cat) / n) * (b.count(cat) / n)
+    denom = 1.0 - pe
+    if abs(denom) < 1e-12:
+        return None
+    return (po - pe) / denom
+
+
+def panel_internal_kappa(
+    per_judge_labels: Mapping[str, Mapping[str, str]],
+) -> float | None:
+    """Mean pairwise Cohen's κ across judge models in the panel.
+
+    `per_judge_labels` maps judge model name → `{pair_id: discretized_label}`.
+    Judges need not cover the same pairs — each judge pair is compared over the
+    intersection of pair_ids they both labeled (mirroring how the human-rater
+    κ is computed in `aggregator`). Judge pairs sharing fewer than two items,
+    or whose κ is undefined, are skipped. Returns None when no judge pair
+    yields a defined κ (e.g., a one-judge panel).
+    """
+
+    judges = sorted(per_judge_labels)
+    if len(judges) < 2:
+        return None
+    kappas: list[float] = []
+    for i, ja in enumerate(judges):
+        for jb in judges[i + 1 :]:
+            common = sorted(set(per_judge_labels[ja]) & set(per_judge_labels[jb]))
+            if len(common) < 2:
+                continue
+            la = [per_judge_labels[ja][pid] for pid in common]
+            lb = [per_judge_labels[jb][pid] for pid in common]
+            k = cohens_kappa(la, lb)
+            if k is not None:
+                kappas.append(k)
+    if not kappas:
+        return None
+    return sum(kappas) / len(kappas)
+
+
+def compute_multi_axis_metrics(
+    raw_scores: Sequence[float],
+    concision_adjustments: Sequence[float],
+    human_labels: Sequence[str],
+    *,
+    concision_weight: float,
+    panel_internal_kappa_value: float | None = None,
+) -> MultiAxisMetrics:
+    """Compute τ-b under neutral / concision / completeness quality priors.
+
+    `raw_scores` are the un-adjusted ensemble scores (one per pair).
+    `concision_adjustments` is the signed concision delta per pair at
+    `concision_weight` (see `aggregation.concision_adjustment`). The
+    completeness axis is that delta reversed — rewarding the more thorough
+    answer instead of the briefer one.
+    """
+
+    if not (len(raw_scores) == len(concision_adjustments) == len(human_labels)):
+        raise ValueError("raw_scores, concision_adjustments, human_labels must align")
+    n = len(raw_scores)
+    if n == 0:
+        return MultiAxisMetrics(
+            n=0, concision_weight=concision_weight,
+            tau_b_unweighted=None,
+            tau_b_concision_weighted=None,
+            tau_b_completeness_weighted=None,
+            panel_internal_kappa=panel_internal_kappa_value,
+        )
+
+    human_numeric = [_LABEL_TO_ORDINAL[h] for h in human_labels]
+    concise = [
+        max(0.0, min(1.0, s + adj)) for s, adj in zip(raw_scores, concision_adjustments)
+    ]
+    complete = [
+        max(0.0, min(1.0, s - adj)) for s, adj in zip(raw_scores, concision_adjustments)
+    ]
+    return MultiAxisMetrics(
+        n=n,
+        concision_weight=concision_weight,
+        tau_b_unweighted=kendall_tau(list(raw_scores), human_numeric),
+        tau_b_concision_weighted=kendall_tau(concise, human_numeric),
+        tau_b_completeness_weighted=kendall_tau(complete, human_numeric),
+        panel_internal_kappa=panel_internal_kappa_value,
+    )

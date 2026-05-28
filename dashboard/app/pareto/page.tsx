@@ -1,4 +1,4 @@
-import { ParetoChart } from "@/components/ParetoChart";
+import { ParetoSlider } from "@/components/ParetoSlider";
 import { ProxyLivePipServer } from "@/components/ProxyLivePipServer";
 import { Shell } from "@/components/Shell";
 import { api } from "@/lib/api";
@@ -55,11 +55,13 @@ export default async function ParetoPage() {
       )}
       {points && points.length > 0 && (
         <div className="mt-6">
-          <ParetoChart points={points} />
+          <ParetoSlider points={points} />
           <div className="mt-4 text-xs text-fg-muted">
             Read this as: bottom-right is bad (high cost, low quality); top-left
-            is good (low cost, high quality). The honest frontier needs hundreds
-            of pairs per cluster — this is the live operating point only.
+            is good (low cost, high quality). The dashed line is the fitted
+            frontier; drag the slider to project a cost for a target quality,
+            and the back-test shows whether that fit holds against the real
+            points. An honest frontier needs hundreds of pairs per cluster.
           </div>
         </div>
       )}
