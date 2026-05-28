@@ -15,15 +15,34 @@ import {
 
 import type { ParetoPoint } from "@/lib/api";
 
+export interface CurvePoint {
+  cost: number;
+  quality: number;
+}
+
 // Higher escalation rate ≈ higher per-request cost (more expensive-tier calls).
 // We chart that as the cost axis. Mean judge score is the quality axis.
-export function ParetoChart({ points }: { points: ParetoPoint[] }) {
+//
+// `frontier` (optional) draws the fitted Pareto curve as a dashed line;
+// `projected` (optional) drops a distinct marker at the slider's current
+// quality→cost projection. Both are used by the navigable-frontier slider.
+export function ParetoChart({
+  points,
+  frontier,
+  projected,
+}: {
+  points: ParetoPoint[];
+  frontier?: CurvePoint[];
+  projected?: CurvePoint | null;
+}) {
   const data = points.map((p) => ({
     cluster: p.cluster_id,
     cost: p.escalation_rate,
     quality: p.mean_quality,
     n: p.sample_size,
   }));
+  const frontierData = (frontier ?? []).map((p) => ({ cost: p.cost, quality: p.quality, n: 1 }));
+  const projectedData = projected ? [{ cost: projected.cost, quality: projected.quality, n: 1 }] : [];
   // WCAG 1.1.1: build an accessible-name summary of the chart's data so
   // screen-reader users hear meaningful content instead of a stream of
   // anonymous percentage strings emitted by the Recharts SVG. Full numeric
@@ -119,6 +138,18 @@ export function ParetoChart({ points }: { points: ParetoPoint[] }) {
               );
             }}
           />
+          {/* Fitted Pareto frontier (dashed line, no dots) — rendered first so
+              the cluster dots sit on top of it. */}
+          {frontierData.length > 1 && (
+            <Scatter
+              data={frontierData}
+              line={{ stroke: "#5AE3D6", strokeWidth: 1, strokeDasharray: "5 4" }}
+              lineType="joint"
+              fill="none"
+              shape={() => <g />}
+              isAnimationActive={false}
+            />
+          )}
           <Scatter data={data} fill="#5AE3D6">
             <LabelList
               dataKey="cluster"
@@ -136,6 +167,15 @@ export function ParetoChart({ points }: { points: ParetoPoint[] }) {
               }}
             />
           </Scatter>
+          {/* Slider's current quality→cost projection (amber diamond). */}
+          {projectedData.length > 0 && (
+            <Scatter
+              data={projectedData}
+              fill="#F5A623"
+              shape="diamond"
+              isAnimationActive={false}
+            />
+          )}
         </ScatterChart>
       </ResponsiveContainer>
       </div>

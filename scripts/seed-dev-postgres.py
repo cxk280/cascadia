@@ -110,24 +110,14 @@ async def main() -> int:
                     escalated,
                 ))
                 pair_id = uuid.uuid4()
-                shadow_rows.append((
-                    pair_id,
-                    request_id,
-                    occurred,
-                    cluster_id,
-                    f"synthetic prompt for {cluster_id}",
-                    cheap,
-                    "cheap response text",
-                    expensive,
-                    "expensive response text",
-                    now,
-                ))
+                pair_scores: list[float] = []
                 for judge, variant, judge_provider in [
                     ("pairwise_preference_v1", "pairwise/v1", "anthropic"),
                     ("pairwise_preference_v1_swapped", "pairwise/v1#swapped", "anthropic"),
                     ("rubric_v1", "rubric/v1", "openai"),
                 ]:
                     score = max(0.0, min(1.0, base_q + (rng.random() - 0.5) * 0.1))
+                    pair_scores.append(score)
                     judge_rows.append((
                         uuid.uuid4(),
                         pair_id,
@@ -140,6 +130,26 @@ async def main() -> int:
                         "bench-hash",
                         500,
                     ))
+                # Persist the per-pair ensemble_score (the mean of this pair's
+                # judge rows) so the seed mirrors what the real judge poller
+                # writes. The dashboard /pareto and the policy controller both
+                # read shadow_pairs.ensemble_score (EC-O1), not AVG(js.score) —
+                # leaving it NULL here would render an empty Pareto chart.
+                ensemble_score = sum(pair_scores) / len(pair_scores)
+                shadow_rows.append((
+                    pair_id,
+                    request_id,
+                    occurred,
+                    cluster_id,
+                    f"synthetic prompt for {cluster_id}",
+                    cheap,
+                    "cheap response text",
+                    expensive,
+                    "expensive response text",
+                    now,
+                    ensemble_score,
+                    0.9,
+                ))
 
         print(
             f"inserting {len(event_rows)} events / "
@@ -160,8 +170,8 @@ async def main() -> int:
             INSERT INTO shadow_pairs (
                 pair_id, request_id, occurred_at, cluster_id, prompt,
                 cheap_model, cheap_response, expensive_model, expensive_response,
-                judged_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                judged_at, ensemble_score, ensemble_confidence
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
             """,
             shadow_rows,
         )

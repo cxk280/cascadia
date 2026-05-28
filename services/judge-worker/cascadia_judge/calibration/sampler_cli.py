@@ -44,6 +44,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--database-url", default=os.environ.get("CASCADIA_DATABASE_URL"))
     parser.add_argument("--round", type=int, required=True,
                         help="1 = seed (stratified random); 2+ = uncertainty-weighted")
+    parser.add_argument("--strategy", default="uncertainty",
+                        choices=["uncertainty", "discrimination"],
+                        help="uncertainty = label where the ensemble hedged; "
+                             "discrimination = label where the two models are far "
+                             "apart in quality (steers away from both-fine pairs). "
+                             "discrimination ranks even in round 1 (uses model tiers).")
     parser.add_argument("--size", type=int, default=30,
                         help="Target batch size (per-cluster stratification splits evenly)")
     parser.add_argument("--attention-check-rate", type=float, default=0.05,
@@ -87,6 +93,7 @@ async def _main(args: argparse.Namespace) -> int:
             target_batch_size=args.size,
             attention_check_rate=args.attention_check_rate,
             rng_seed=args.seed,
+            selection_strategy=args.strategy,
         )
         batch = select_batch(candidates, config=cfg, round_number=args.round)
         log.info("selected %d pairs", len(batch))
@@ -94,7 +101,12 @@ async def _main(args: argparse.Namespace) -> int:
         attention_count = max(0, int(round(args.size * cfg.attention_check_rate)))
         attention = materialize_attention_checks(attention_count)
 
-        reason = "seed_stratified" if args.round == 1 else "uncertainty_weighted"
+        if args.strategy == "discrimination":
+            reason = "discrimination_weighted"
+        elif args.round == 1:
+            reason = "seed_stratified"
+        else:
+            reason = "uncertainty_weighted"
         inserted = await persist_batch(
             pool,
             batch=batch,

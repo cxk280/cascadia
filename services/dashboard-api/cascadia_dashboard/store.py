@@ -201,20 +201,26 @@ class AsyncpgStore(Store):
     async def pareto_points(self, *, window: timedelta) -> Sequence[ParetoPoint]:
         cutoff = _cutoff(window)
         # The "Pareto chart" maps escalation rate (proxy for cost) against
-        # mean judge score (proxy for quality), one point per cluster. A
-        # production-grade implementation would project against the canonical
-        # frontier curve estimated from MT-Bench; this is the live operating
-        # point view that the dashboard ships with.
+        # mean quality, one point per cluster. Quality is the bias-corrected
+        # per-pair `shadow_pairs.ensemble_score` — the SAME signal the policy
+        # controller tunes on (EC-O1). Reading it here instead of AVG(js.score)
+        # keeps the dashboard and the controller consistent and avoids the raw-
+        # judge-rows pitfalls: counting error rows as 0, double-counting the
+        # position-swapped sibling verdict, including self-preferring judges,
+        # and reporting a row-count (3× per pair) as the sample size. Pairs are
+        # scored by the real judge ensemble (the poller, or bench/scripts/
+        # mtbench-humaneval.sh); rows still awaiting a verdict have a NULL
+        # ensemble_score and are excluded until judged.
         sql = """
             SELECT
                 sp.cluster_id,
-                AVG(js.score) AS mean_quality,
+                AVG(sp.ensemble_score) AS mean_quality,
                 AVG(CASE WHEN ev.escalated THEN 1.0 ELSE 0.0 END) AS escalation_rate,
                 COUNT(*) AS sample_size
               FROM shadow_pairs sp
-              JOIN judge_scores js ON js.pair_id = sp.pair_id
-              JOIN events ev      ON ev.request_id = sp.request_id
+              JOIN events ev ON ev.request_id = sp.request_id
              WHERE sp.occurred_at > $1
+               AND sp.ensemble_score IS NOT NULL
              GROUP BY sp.cluster_id
             HAVING COUNT(*) >= 1
           ORDER BY mean_quality DESC

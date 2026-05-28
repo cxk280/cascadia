@@ -39,13 +39,36 @@ from __future__ import annotations
 import logging
 import random
 import uuid
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Iterable
 
 import asyncpg
 
 log = logging.getLogger(__name__)
+
+
+# Coarse quality tiers for the models the cascade routes between. The exact
+# integers don't matter — only the *ordering* and the *gap* between two models
+# do. A bigger gap (e.g. gpt-3.5 → gpt-4o) makes a pair more discriminating:
+# humans can actually express a confident preference, so the label carries
+# real signal instead of a coin-flip between two equally-good answers. Matched
+# by longest substring so `openai/gpt-4o-mini` resolves to the mini tier, not
+# the gpt-4o tier. Override via SamplerConfig.model_tier_ranks.
+DEFAULT_MODEL_TIER_RANKS: Mapping[str, int] = {
+    "gpt-3.5": 0,
+    "llama-3.1-8b": 0,
+    "llama-3.2": 0,
+    "haiku": 1,
+    "gpt-4o-mini": 1,
+    "llama-3.3-70b": 2,
+    "grok-2": 2,
+    "mixtral": 1,
+    "gpt-4-turbo": 3,
+    "gpt-4o": 3,
+    "sonnet": 3,
+    "opus": 4,
+}
 
 
 @dataclass(frozen=True)
@@ -59,6 +82,19 @@ class SamplerConfig:
     w_confidence: float = 0.5
     w_tie_proximity: float = 0.3
     w_position_bias: float = 0.2
+    # Selection strategy:
+    #   "uncertainty"    — the round-2+ default: label where the ensemble
+    #                      hedged / sits near a tie / shows position bias.
+    #   "discrimination" — Task 3 refinement: label where the two models are
+    #                      far apart in quality (big tier gap, a clear ensemble
+    #                      winner, or the ensemble disagrees with an existing
+    #                      human label). Steers the budget away from
+    #                      "both-fine" pairs that produced the pilot's τ-b ≈ 0.
+    selection_strategy: str = "uncertainty"
+    w_discrimination_gap: float = 0.5
+    w_discrimination_extremity: float = 0.3
+    w_discrimination_disagreement: float = 0.2
+    model_tier_ranks: Mapping[str, int] = field(default_factory=lambda: DEFAULT_MODEL_TIER_RANKS)
 
 
 @dataclass(frozen=True)
@@ -75,6 +111,39 @@ class CandidatePair:
     ensemble_score: float | None = None
     ensemble_confidence: float | None = None
     ensemble_position_bias: float | None = None
+    # Present only once a human has labeled this pair (round 3+): 1.0=a wins,
+    # 0.5=tie, 0.0=b wins. Lets the discrimination strategy chase pairs where
+    # the ensemble and the human disagree.
+    human_label_ordinal: float | None = None
+
+    def discrimination(self, cfg: SamplerConfig) -> float:
+        """How much a human label on this pair would *discriminate* models.
+
+        Three orthogonal signals that a pair has a real quality gap (so a
+        human can give a confident, informative label) rather than being two
+        equally-fine answers:
+          - model_gap   → the two models are far apart in tier.
+          - extremity   → the ensemble already sees a clear winner (far from a
+                          0.5 tie); the *opposite* of the uncertainty sampler's
+                          tie-proximity term, by design.
+          - disagreement→ the ensemble and an existing human label diverge.
+        All three sit in [0, 1] and the weighted sum stays in [0, 1].
+        """
+
+        gap = _model_tier_gap(self.cheap_model, self.expensive_model, cfg.model_tier_ranks)
+        if self.ensemble_score is None:
+            extremity = 0.0
+        else:
+            extremity = 2.0 * abs(self.ensemble_score - 0.5)
+        if self.ensemble_score is not None and self.human_label_ordinal is not None:
+            disagreement = abs(self.ensemble_score - self.human_label_ordinal)
+        else:
+            disagreement = 0.0
+        return (
+            cfg.w_discrimination_gap * gap
+            + cfg.w_discrimination_extremity * extremity
+            + cfg.w_discrimination_disagreement * disagreement
+        )
 
     def uncertainty(self, cfg: SamplerConfig) -> float:
         # Round-1 (no ensemble) → uniform uncertainty so cluster
@@ -91,6 +160,12 @@ class CandidatePair:
         )
 
 
+def _priority(c: CandidatePair, config: SamplerConfig) -> float:
+    if config.selection_strategy == "discrimination":
+        return c.discrimination(config)
+    return c.uncertainty(config)
+
+
 def select_batch(
     candidates: Sequence[CandidatePair],
     *,
@@ -99,13 +174,22 @@ def select_batch(
 ) -> list[CandidatePair]:
     """Pick the next labeling batch from a pool of candidate pairs.
 
-    Returns pairs ordered by descending uncertainty *within each cluster*,
-    so labeling the first few delivers the most metric movement per pair.
+    Returns pairs ordered by descending priority *within each cluster*, so
+    labeling the first few delivers the most metric movement per pair. The
+    priority is the uncertainty score (default strategy) or the discrimination
+    score (`selection_strategy="discrimination"`).
+
+    Round 1 of the *uncertainty* strategy has no ensemble signal, so it falls
+    back to stratified random. The *discrimination* strategy ranks even in
+    round 1 — its model-tier-gap signal comes from the model names alone, no
+    ensemble scores required.
     """
 
     rng = random.Random(config.rng_seed)
     if not candidates:
         return []
+
+    rank_round_one = config.selection_strategy == "discrimination"
 
     if config.cluster_stratify:
         by_cluster: dict[str, list[CandidatePair]] = {}
@@ -116,28 +200,60 @@ def select_batch(
         picked: list[CandidatePair] = []
         for cid in clusters:
             pool = by_cluster[cid]
-            if round_number == 1:
+            if round_number == 1 and not rank_round_one:
                 # No ensemble signal → uniform random within cluster.
                 rng.shuffle(pool)
                 picked.extend(pool[:per_cluster])
             else:
-                pool_sorted = sorted(pool, key=lambda c: c.uncertainty(config), reverse=True)
+                pool_sorted = sorted(pool, key=lambda c: _priority(c, config), reverse=True)
                 picked.extend(pool_sorted[:per_cluster])
         # Cap to target size; if some clusters were short, top up from the
-        # global pool ranked by uncertainty.
+        # global pool ranked by priority.
         if len(picked) < config.target_batch_size:
             remaining = [c for c in candidates if c not in picked]
-            remaining.sort(key=lambda c: c.uncertainty(config), reverse=True)
+            remaining.sort(key=lambda c: _priority(c, config), reverse=True)
             picked.extend(remaining[: config.target_batch_size - len(picked)])
         return picked[: config.target_batch_size]
 
-    if round_number == 1:
+    if round_number == 1 and not rank_round_one:
         shuffled = list(candidates)
         rng.shuffle(shuffled)
         return shuffled[: config.target_batch_size]
-    return sorted(candidates, key=lambda c: c.uncertainty(config), reverse=True)[
+    return sorted(candidates, key=lambda c: _priority(c, config), reverse=True)[
         : config.target_batch_size
     ]
+
+
+def _tier_of(model: str, ranks: Mapping[str, int]) -> int | None:
+    """Resolve a model string to a tier rank by longest-substring match.
+
+    Longest key wins so `gpt-4o-mini` matches the mini tier, not `gpt-4o`.
+    Returns None when no key matches (unknown model → no gap signal).
+    """
+
+    m = model.lower()
+    best: tuple[int, int] | None = None  # (key_length, rank)
+    for key, rank in ranks.items():
+        if key in m and (best is None or len(key) > best[0]):
+            best = (len(key), rank)
+    return None if best is None else best[1]
+
+
+def _model_tier_gap(cheap_model: str, expensive_model: str, ranks: Mapping[str, int]) -> float:
+    """Normalized tier distance between the two models, in [0, 1].
+
+    Returns 0.0 when either model is unknown (no signal to act on) so an
+    unrecognized model never inflates a pair's discrimination score.
+    """
+
+    rc = _tier_of(cheap_model, ranks)
+    re = _tier_of(expensive_model, ranks)
+    if rc is None or re is None or not ranks:
+        return 0.0
+    spread = max(ranks.values()) - min(ranks.values())
+    if spread <= 0:
+        return 0.0
+    return min(1.0, abs(re - rc) / spread)
 
 
 # Static attention-check fixtures. Obvious-by-construction pairs whose
