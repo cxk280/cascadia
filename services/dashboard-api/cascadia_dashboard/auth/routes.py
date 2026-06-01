@@ -39,6 +39,7 @@ from cascadia_dashboard.auth.types import (
     LogoutAck,
     SessionResponse,
     SessionUser,
+    SetRoleRequest,
     SignupRequest,
     TokenRequest,
 )
@@ -83,12 +84,18 @@ def attach_auth_routes(app: FastAPI, get_store: Callable[[], AuthStore]) -> None
         store = get_store()
         user_id = str(uuid.uuid4())
         password_hash = hash_password(req.password)
+        # Bootstrap: the FIRST account becomes admin (the methodology owner);
+        # everyone after is an operator. Role is never taken from the request —
+        # that would be a trivial privilege escalation. An admin promotes others
+        # via /api/auth/role.
+        role = "admin" if await store.count_users() == 0 else "operator"
         try:
             await store.create_user(
                 user_id=user_id,
                 email=req.email,
                 password_hash=password_hash,
                 display_name=req.display_name,
+                role=role,
             )
         except DuplicateEmailError:
             # 409, not 401 — the client asked to create something that exists.
@@ -105,7 +112,10 @@ def attach_auth_routes(app: FastAPI, get_store: Callable[[], AuthStore]) -> None
             token=token,
             expires_at=expires_at,
             user=SessionUser(
-                user_id=user_id, email=req.email, display_name=req.display_name
+                user_id=user_id,
+                email=req.email,
+                display_name=req.display_name,
+                role=role,
             ),
         )
 
@@ -138,7 +148,10 @@ def attach_auth_routes(app: FastAPI, get_store: Callable[[], AuthStore]) -> None
             token=token,
             expires_at=expires_at,
             user=SessionUser(
-                user_id=user.user_id, email=user.email, display_name=user.display_name
+                user_id=user.user_id,
+                email=user.email,
+                display_name=user.display_name,
+                role=user.role,
             ),
         )
 
@@ -157,6 +170,7 @@ def attach_auth_routes(app: FastAPI, get_store: Callable[[], AuthStore]) -> None
                 user_id=active.user_id,
                 email=active.email,
                 display_name=active.display_name,
+                role=active.role,
             ),
             expires_at=active.expires_at,
         )
@@ -166,5 +180,39 @@ def attach_auth_routes(app: FastAPI, get_store: Callable[[], AuthStore]) -> None
         # Idempotent — logging out an already-dead token is a no-op success.
         revoked = await get_store().revoke_session(hash_token(req.token))
         return LogoutAck(revoked=revoked)
+
+    @router.post("/role", response_model=SessionUser)
+    async def set_role(req: SetRoleRequest) -> SessionUser:
+        # Admin-only. The caller proves they're an admin with their own live
+        # session token; we never trust a client-supplied "I am admin" claim.
+        store = get_store()
+        caller = await store.get_active_session(hash_token(req.token))
+        if caller is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="session invalid or expired",
+            )
+        if caller.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="admin role required",
+            )
+        # Guard against an admin demoting the last admin and locking everyone
+        # out of calibration/role management is out of scope here; the bootstrap
+        # admin can always be re-promoted directly in the DB if needed.
+        ok = await store.set_role(req.email, req.role)
+        if not ok:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="no account with that email",
+            )
+        updated = await store.get_user_by_email(req.email)
+        assert updated is not None  # set_role returned True
+        return SessionUser(
+            user_id=updated.user_id,
+            email=updated.email,
+            display_name=updated.display_name,
+            role=updated.role,
+        )
 
     app.include_router(router)

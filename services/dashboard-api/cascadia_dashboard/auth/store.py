@@ -33,6 +33,7 @@ class StoredUser:
     email: str
     password_hash: str
     display_name: str | None
+    role: str = "operator"
 
 
 @dataclass(frozen=True)
@@ -44,15 +45,24 @@ class ActiveSession:
     user_id: str
     email: str
     display_name: str | None
+    role: str
     expires_at: datetime
 
 
 @runtime_checkable
 class AuthStore(Protocol):
     async def create_user(
-        self, *, user_id: str, email: str, password_hash: str, display_name: str | None
+        self,
+        *,
+        user_id: str,
+        email: str,
+        password_hash: str,
+        display_name: str | None,
+        role: str = "operator",
     ) -> None: ...
     async def get_user_by_email(self, email: str) -> "StoredUser | None": ...
+    async def count_users(self) -> int: ...
+    async def set_role(self, email: str, role: str) -> bool: ...
     async def update_last_login(self, user_id: str) -> None: ...
     async def update_password_hash(self, user_id: str, password_hash: str) -> None: ...
     async def create_session(
@@ -73,14 +83,22 @@ class AsyncpgAuthStore(AuthStore):
         self._pool = pool
 
     async def create_user(
-        self, *, user_id: str, email: str, password_hash: str, display_name: str | None
+        self,
+        *,
+        user_id: str,
+        email: str,
+        password_hash: str,
+        display_name: str | None,
+        role: str = "operator",
     ) -> None:
         sql = """
-            INSERT INTO auth_users (user_id, email, password_hash, display_name)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO auth_users (user_id, email, password_hash, display_name, role)
+            VALUES ($1, $2, $3, $4, $5)
         """
         try:
-            await self._pool.execute(sql, user_id, email, password_hash, display_name)
+            await self._pool.execute(
+                sql, user_id, email, password_hash, display_name, role
+            )
         except asyncpg.exceptions.UniqueViolationError as exc:
             # The LOWER(email) unique index (or the PK) fired. Either way the
             # caller-facing meaning is "this email is taken".
@@ -88,7 +106,7 @@ class AsyncpgAuthStore(AuthStore):
 
     async def get_user_by_email(self, email: str) -> StoredUser | None:
         sql = """
-            SELECT user_id, email, password_hash, display_name
+            SELECT user_id, email, password_hash, display_name, role
               FROM auth_users
              WHERE LOWER(email) = LOWER($1)
              LIMIT 1
@@ -101,7 +119,21 @@ class AsyncpgAuthStore(AuthStore):
             email=row["email"],
             password_hash=row["password_hash"],
             display_name=row["display_name"],
+            role=row["role"],
         )
+
+    async def count_users(self) -> int:
+        row = await self._pool.fetchrow("SELECT COUNT(*) AS n FROM auth_users")
+        return int(row["n"]) if row else 0
+
+    async def set_role(self, email: str, role: str) -> bool:
+        row = await self._pool.fetchrow(
+            "UPDATE auth_users SET role = $2 WHERE LOWER(email) = LOWER($1) "
+            "RETURNING user_id",
+            email,
+            role,
+        )
+        return row is not None
 
     async def update_last_login(self, user_id: str) -> None:
         await self._pool.execute(
@@ -137,7 +169,7 @@ class AsyncpgAuthStore(AuthStore):
         # Liveness is decided in SQL (unrevoked + unexpired) so validation is
         # one indexed read with no app-side clock branching.
         sql = """
-            SELECT s.user_id, s.expires_at, u.email, u.display_name
+            SELECT s.user_id, s.expires_at, u.email, u.display_name, u.role
               FROM auth_sessions s
               JOIN auth_users    u ON u.user_id = s.user_id
              WHERE s.token_sha256 = $1
@@ -152,6 +184,7 @@ class AsyncpgAuthStore(AuthStore):
             user_id=str(row["user_id"]),
             email=row["email"],
             display_name=row["display_name"],
+            role=row["role"],
             expires_at=row["expires_at"],
         )
 
@@ -181,7 +214,13 @@ class InMemoryAuthStore(AuthStore):
         self._sessions: dict[str, dict] = {}
 
     async def create_user(
-        self, *, user_id: str, email: str, password_hash: str, display_name: str | None
+        self,
+        *,
+        user_id: str,
+        email: str,
+        password_hash: str,
+        display_name: str | None,
+        role: str = "operator",
     ) -> None:
         if email.lower() in self._email_index:
             raise DuplicateEmailError(email)
@@ -190,12 +229,30 @@ class InMemoryAuthStore(AuthStore):
             email=email,
             password_hash=password_hash,
             display_name=display_name,
+            role=role,
         )
         self._email_index[email.lower()] = user_id
 
     async def get_user_by_email(self, email: str) -> StoredUser | None:
         user_id = self._email_index.get(email.lower())
         return self._users.get(user_id) if user_id else None
+
+    async def count_users(self) -> int:
+        return len(self._users)
+
+    async def set_role(self, email: str, role: str) -> bool:
+        user_id = self._email_index.get(email.lower())
+        if user_id is None:
+            return False
+        u = self._users[user_id]
+        self._users[user_id] = StoredUser(
+            user_id=u.user_id,
+            email=u.email,
+            password_hash=u.password_hash,
+            display_name=u.display_name,
+            role=role,
+        )
+        return True
 
     async def update_last_login(self, user_id: str) -> None:
         # No observable field in the fake; the call must just not error.
@@ -209,6 +266,7 @@ class InMemoryAuthStore(AuthStore):
                 email=u.email,
                 password_hash=password_hash,
                 display_name=u.display_name,
+                role=u.role,
             )
 
     async def create_session(
@@ -240,6 +298,7 @@ class InMemoryAuthStore(AuthStore):
             user_id=user.user_id,
             email=user.email,
             display_name=user.display_name,
+            role=user.role,
             expires_at=s["expires_at"],
         )
 

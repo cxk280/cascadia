@@ -24,10 +24,13 @@ export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 const VALIDATE_TIMEOUT_MS = 4_000;
 
+export type Role = "operator" | "admin" | "reviewer";
+
 export interface SessionUser {
   user_id: string;
   email: string;
   display_name: string | null;
+  role: Role;
 }
 
 export function sessionCookieOptions(maxAge: number) {

@@ -54,6 +54,7 @@ async def test_get_user_by_email_maps_row() -> None:
             "email": "a@b.dev",
             "password_hash": "$argon2id$h",
             "display_name": "A",
+            "role": "admin",
         }
     )
     store = AsyncpgAuthStore(pool)
@@ -62,6 +63,7 @@ async def test_get_user_by_email_maps_row() -> None:
     assert u.user_id == "u1"
     assert u.email == "a@b.dev"
     assert u.password_hash == "$argon2id$h"
+    assert u.role == "admin"
 
 
 @pytest.mark.asyncio
@@ -82,6 +84,7 @@ async def test_get_active_session_maps_row() -> None:
             "expires_at": exp,
             "email": "a@b.dev",
             "display_name": None,
+            "role": "operator",
         }
     )
     store = AsyncpgAuthStore(pool)
@@ -89,6 +92,7 @@ async def test_get_active_session_maps_row() -> None:
     assert s is not None
     assert s.user_id == "u1"
     assert s.email == "a@b.dev"
+    assert s.role == "operator"
     assert s.expires_at == exp
 
 

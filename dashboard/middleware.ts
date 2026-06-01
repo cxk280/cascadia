@@ -46,7 +46,12 @@ function isPublicPath(pathname: string): boolean {
   return false;
 }
 
-async function tokenIsValid(token: string): Promise<boolean> {
+type Role = "operator" | "admin" | "reviewer";
+
+// Validate the session and return the user's role, or null if the token is
+// absent/expired/revoked/unverifiable. Fail closed: an unreachable auth
+// service yields null (deny), never an open gate.
+async function sessionRole(token: string): Promise<Role | null> {
   try {
     const res = await fetch(`${API_BASE}/api/auth/session`, {
       method: "POST",
@@ -55,12 +60,22 @@ async function tokenIsValid(token: string): Promise<boolean> {
       cache: "no-store",
       signal: AbortSignal.timeout(VALIDATE_TIMEOUT_MS),
     });
-    return res.ok;
+    if (!res.ok) return null;
+    const data = (await res.json()) as { user?: { role?: Role } };
+    return data.user?.role ?? "operator";
   } catch {
-    // Fail closed — an unreachable auth service denies access, it never
-    // opens the gate.
-    return false;
+    return null;
   }
+}
+
+// The calibration surface (labeling UI + write API), excluding the public
+// rubric (already allowed in isPublicPath). Only admin/reviewer may enter.
+function isCalibrationPath(pathname: string): boolean {
+  return (
+    pathname === "/calibrate" ||
+    pathname.startsWith("/calibrate/") ||
+    pathname.startsWith("/api/calibrate/")
+  );
 }
 
 function authDisabledInDev(): boolean {
@@ -77,31 +92,45 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     return NextResponse.next();
   }
 
+  const isApi = pathname.startsWith("/api/");
   const token = req.cookies.get(SESSION_COOKIE)?.value;
-  const ok = token ? await tokenIsValid(token) : false;
-  if (ok) {
-    return NextResponse.next();
+  const role = token ? await sessionRole(token) : null;
+
+  // Not authenticated → 401 for API, redirect-to-login (clearing the stale
+  // cookie) for pages.
+  if (role === null) {
+    if (isApi) {
+      return NextResponse.json(
+        { detail: "authentication required" },
+        { status: 401, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    const loginUrl = req.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.search = "";
+    loginUrl.searchParams.set("next", pathname + req.nextUrl.search);
+    const res = NextResponse.redirect(loginUrl);
+    if (token) res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
+    return res;
   }
 
-  // API routes get a clean 401 (a redirect would be nonsense to a fetch()).
-  if (pathname.startsWith("/api/")) {
-    return NextResponse.json(
-      { detail: "authentication required" },
-      { status: 401, headers: { "Cache-Control": "no-store" } },
-    );
+  // Authenticated — now enforce role boundaries.
+  if (isCalibrationPath(pathname)) {
+    // Calibration is admin/reviewer only. Operators are bounced.
+    if (role !== "admin" && role !== "reviewer") {
+      return isApi
+        ? NextResponse.json({ detail: "forbidden" }, { status: 403 })
+        : NextResponse.redirect(new URL("/overview", req.url));
+    }
+  } else if (role === "reviewer") {
+    // Reviewers only ever see the calibration surface — keep them out of the
+    // operator dashboard entirely.
+    return isApi
+      ? NextResponse.json({ detail: "forbidden" }, { status: 403 })
+      : NextResponse.redirect(new URL("/calibrate", req.url));
   }
 
-  // Page routes redirect to /login, preserving the intended destination.
-  const loginUrl = req.nextUrl.clone();
-  loginUrl.pathname = "/login";
-  loginUrl.search = "";
-  loginUrl.searchParams.set("next", pathname + req.nextUrl.search);
-  const res = NextResponse.redirect(loginUrl);
-  // Drop a stale/invalid cookie so we don't bounce on it next time.
-  if (token) {
-    res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
-  }
-  return res;
+  return NextResponse.next();
 }
 
 // Run on everything except Next internals and static assets (paths with a

@@ -38,12 +38,75 @@ def _signup(client: TestClient, email="ops@cascadia.dev", password="hunter2hunte
     )
 
 
+def test_first_signup_is_admin_rest_are_operators(client: TestClient) -> None:
+    first = _signup(client, email="boss@cascadia.dev")
+    assert first.status_code == 201
+    assert first.json()["user"]["role"] == "admin"
+    second = _signup(client, email="grunt@cascadia.dev")
+    assert second.status_code == 201
+    assert second.json()["user"]["role"] == "operator"
+
+
+def test_signup_cannot_self_assign_admin_via_body(client: TestClient) -> None:
+    # Even if a client sends role=admin, it's ignored — the 2nd signup is an
+    # operator regardless of the request body.
+    _signup(client, email="boss@cascadia.dev")
+    r = client.post(
+        "/api/auth/signup",
+        json={
+            "email": "sneaky@cascadia.dev",
+            "password": "hunter2hunter",
+            "role": "admin",
+        },
+    )
+    assert r.status_code == 201
+    assert r.json()["user"]["role"] == "operator"
+
+
+def test_admin_can_set_role_operator_cannot(client: TestClient) -> None:
+    admin_token = _signup(client, email="boss@cascadia.dev").json()["token"]
+    _signup(client, email="rev@cascadia.dev")  # operator
+    op_token = _signup(client, email="op@cascadia.dev").json()["token"]
+
+    # Operator may not change roles.
+    forbidden = client.post(
+        "/api/auth/role",
+        json={"token": op_token, "email": "rev@cascadia.dev", "role": "reviewer"},
+    )
+    assert forbidden.status_code == 403
+
+    # Admin promotes the reviewer.
+    ok = client.post(
+        "/api/auth/role",
+        json={"token": admin_token, "email": "rev@cascadia.dev", "role": "reviewer"},
+    )
+    assert ok.status_code == 200
+    assert ok.json()["role"] == "reviewer"
+
+    # And the session for that user now reports reviewer.
+    rev_login = client.post(
+        "/api/auth/login",
+        json={"email": "rev@cascadia.dev", "password": "hunter2hunter"},
+    )
+    assert rev_login.json()["user"]["role"] == "reviewer"
+
+
+def test_set_role_unknown_email_404(client: TestClient) -> None:
+    admin_token = _signup(client, email="boss@cascadia.dev").json()["token"]
+    r = client.post(
+        "/api/auth/role",
+        json={"token": admin_token, "email": "ghost@cascadia.dev", "role": "admin"},
+    )
+    assert r.status_code == 404
+
+
 def test_signup_creates_account_and_session(client: TestClient) -> None:
     r = _signup(client)
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["user"]["email"] == "ops@cascadia.dev"
     assert body["user"]["display_name"] == "Ops"
+    assert body["user"]["role"] == "admin"  # first account
     assert body["token"]
     # The freshly issued token validates.
     s = client.post("/api/auth/session", json={"token": body["token"]})

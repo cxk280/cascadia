@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+Role = Literal["operator", "admin", "reviewer"]
 
 # Email: a deliberately *moderate* shape check, not RFC 5322. We only need to
 # reject obvious junk before it reaches the store — the address isn't used for
@@ -109,6 +112,21 @@ class SessionUser(BaseModel):
     user_id: str
     email: str
     display_name: str | None = None
+    role: Role = "operator"
+
+
+class SetRoleRequest(BaseModel):
+    """Admin-only: change another account's role. `token` is the caller's
+    session token (must belong to an admin); `email` identifies the target."""
+
+    token: str = Field(min_length=1, max_length=512)
+    email: str
+    role: Role
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return normalize_email(v)
 
 
 class AuthResponse(BaseModel):

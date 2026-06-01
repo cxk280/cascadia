@@ -7,6 +7,7 @@ interface SessionUser {
   user_id: string;
   email: string;
   display_name: string | null;
+  role: "operator" | "admin" | "reviewer";
 }
 
 // Header account control. Fetches the current session client-side (the token
@@ -84,6 +85,11 @@ export function UserMenu() {
               Signed in as
             </div>
             <div className="text-sm text-fg truncate">{user?.email ?? "…"}</div>
+            {user?.role && (
+              <div className="mt-1 inline-block rounded bg-bg-raised px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-fg-muted">
+                {user.role}
+              </div>
+            )}
           </div>
           <button
             type="button"
