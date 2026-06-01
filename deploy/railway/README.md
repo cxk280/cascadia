@@ -36,6 +36,20 @@ pg_dump --no-owner --no-acl "$LOCAL_DSN" | psql "$RAILWAY_DSN"
 # 4. Set env vars per service (see env-vars.md in this dir).
 ```
 
+## Continuous deployment (GitHub Actions)
+
+`.github/workflows/deploy.yml` deploys **all** services to the `dev` environment on push to `main`, using `railway up`. Each push only redeploys the services whose paths changed; `workflow_dispatch` can force one service or `all`.
+
+This exists because only `cascadia-proxy` was ever connected to Railway's native GitHub integration — the other four were created with `railway up` and so never redeployed on merge. The workflow puts every service on the same uniform mechanism.
+
+**One-time setup:**
+
+1. **Create a project token.** Railway → `cascadia-dev` project → **Settings → Tokens** → create a token scoped to the **`dev`** environment. (Project tokens already target a specific project + environment, so `railway up` only needs `--service`.)
+2. **Add it to GitHub.** Repo → **Settings → Secrets and variables → Actions** → new secret named **`RAILWAY_TOKEN`** with that value.
+3. **Disconnect the proxy's native trigger.** Railway → `cascadia-proxy` → **Settings → Source** → disconnect the GitHub repo. Otherwise the proxy deploys twice on every push (once natively, once from the Action).
+
+After that, merges to `main` deploy automatically; check progress under the repo's **Actions** tab.
+
 ## Env vars per service
 
 See `env-vars.md` in this directory for the complete matrix. The two non-obvious entries from the Option-B correction:

@@ -1,0 +1,118 @@
+name: deploy
+
+# Deploys every Cascadia service to the Railway `dev` environment from `main`.
+#
+# Why this exists: only `cascadia-proxy` was ever connected to GitHub on
+# Railway, so merges to main silently failed to redeploy the dashboard,
+# dashboard-api, judge-worker, and policy-controller (they were created with
+# `railway up` and had no push trigger). Rather than wire each one through
+# Railway's native GitHub integration, we deploy *all* of them uniformly here
+# with `railway up`, the exact path that's known to work for this monorepo.
+#
+# Each push only redeploys the services whose paths actually changed (see the
+# paths-filter below); `workflow_dispatch` lets you force a single service or
+# everything by hand.
+#
+# Requires repo secret RAILWAY_TOKEN — a Railway *project token* scoped to the
+# cascadia-dev project's `dev` environment (Railway: Project → Settings →
+# Tokens). The token already targets that project+environment, so `railway up`
+# needs only --service.
+#
+# NOTE: once this is live, disconnect cascadia-proxy's GitHub source in the
+# Railway UI (Service → Settings → Source) so it doesn't double-deploy (once
+# from Railway's native trigger, once from here).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to deploy"
+        type: choice
+        default: all
+        options:
+          - all
+          - cascadia-proxy
+          - cascadia-dashboard
+          - cascadia-dashboard-api
+          - cascadia-judge-worker
+          - cascadia-policy-controller
+
+jobs:
+  changes:
+    name: detect changed services
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.assemble.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          # Filter keys deliberately match the Railway service names minus the
+          # "cascadia-" prefix, so the matrix below is a one-line mapping.
+          filters: |
+            proxy:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'deploy/docker/proxy.Dockerfile'
+            dashboard:
+              - 'dashboard/**'
+              - 'deploy/docker/dashboard.Dockerfile'
+            dashboard-api:
+              - 'services/dashboard-api/**'
+              - 'deploy/docker/dashboard-api.Dockerfile'
+            judge-worker:
+              - 'services/judge-worker/**'
+              - 'deploy/docker/judge-worker.Dockerfile'
+            policy-controller:
+              - 'services/policy-controller/**'
+              - 'deploy/docker/policy-controller.Dockerfile'
+      - name: assemble matrix
+        id: assemble
+        env:
+          DISPATCH_SERVICE: ${{ github.event.inputs.service }}
+          # JSON array of matched filter keys, e.g. ["dashboard","proxy"].
+          CHANGED: ${{ steps.filter.outputs.changes }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "$DISPATCH_SERVICE" = "all" ]; then
+              services='["cascadia-proxy","cascadia-dashboard","cascadia-dashboard-api","cascadia-judge-worker","cascadia-policy-controller"]'
+            else
+              services="[\"$DISPATCH_SERVICE\"]"
+            fi
+          else
+            services=$(echo "${CHANGED:-[]}" | jq -c '[ "cascadia-" + .[] ]')
+          fi
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+          echo "Will deploy: $services"
+
+  deploy:
+    name: deploy ${{ matrix.service }}
+    needs: changes
+    if: needs.changes.outputs.services != '[]' && needs.changes.outputs.services != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    # Per-service queue: a newer deploy of the same service supersedes an
+    # in-flight one, but different services never block each other.
+    concurrency:
+      group: deploy-${{ matrix.service }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: install Railway CLI
+        run: npm i -g @railway/cli
+      - name: railway up
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service "${{ matrix.service }}" --ci
