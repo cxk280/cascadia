@@ -57,7 +57,24 @@ pub async fn run() -> anyhow::Result<()> {
 
     let policy = PolicyTable::from_env().context("loading policy table")?;
     let policy_swap = std::sync::Arc::new(arc_swap::ArcSwap::from_pointee(policy));
-    if let Some(path) = config.policy_file.clone() {
+    // Policy source: `postgres` polls the shared `policy_store` table (the
+    // controller writes it) — for deploys without a cross-service volume.
+    // Otherwise fall back to the file watcher when CASCADIA_POLICY_FILE is set.
+    // The `from_env` policy above is the initial value either way (and the
+    // postgres seed when the table is empty).
+    let policy_source = env::var("CASCADIA_POLICY_SOURCE")
+        .unwrap_or_default()
+        .to_lowercase();
+    if policy_source == "postgres" {
+        match &db_pool {
+            Some(pool) => watcher::spawn_pg(pool.clone(), policy_swap.clone())
+                .await
+                .context("initializing postgres policy source")?,
+            None => anyhow::bail!(
+                "CASCADIA_POLICY_SOURCE=postgres requires CASCADIA_DATABASE_URL to be set"
+            ),
+        }
+    } else if let Some(path) = config.policy_file.clone() {
         watcher::spawn(path, policy_swap.clone()).context("spawning policy watcher")?;
     }
     let shutdown_timeout = env::var("CASCADIA_SHUTDOWN_TIMEOUT_SECS")
@@ -115,6 +132,8 @@ fn log_recognized_env_vars() {
         "CASCADIA_OTLP_ENDPOINT",
         "CASCADIA_POLICY_FILE",
         "CASCADIA_POLICY_JSON",
+        "CASCADIA_POLICY_SOURCE",
+        "CASCADIA_POLICY_POLL_SECS",
         "CASCADIA_PROXY_BEARER_TOKEN",
         "CASCADIA_CHEAP_MODEL",
         "CASCADIA_EXPENSIVE_MODEL",
