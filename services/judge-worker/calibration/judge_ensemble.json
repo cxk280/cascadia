@@ -1,0 +1,25 @@
+{
+  "version": "v1",
+  "updated": "2026-06-01",
+  "_comment": "Baked-in calibration result: the judge ensemble Cascadia ships with. Normal operators consume this; they do not calibrate (calibration is admin/reviewer work — see PLAN.md §9 2026-06-01). The calibration TOOLING stays in-repo (it's the methodology differentiator); this file is the committed RESULT it justifies. Sensitive raw human labels are NOT committed — only the synthetic golden set + these derived findings.",
+
+  "judges": [
+    "pairwise_preference_v1",
+    "pairwise_preference_v1_swapped",
+    "rubric_v1"
+  ],
+  "concision_weight": 0.0,
+
+  "default_panel": ["openai:gpt-4o-mini", "openai:gpt-4o"],
+  "panel_note": "The live judge panel MUST be a different model family than the cascade tiers — the anti-self-preference filter (substring match on model name) discounts a judge scoring its own family. The default Anthropic Haiku->Sonnet cascade therefore uses an OpenAI panel. Add 'groq:llama-3.3-70b' or 'xai:grok-...' (with the corresponding key) to make it a true cross-PROVIDER panel rather than multi-model-single-provider. Consumed by scripts/quickstart.sh (CASCADIA_LIVE) and overridable via $CASCADIA_JUDGE_PANEL.",
+
+  "calibration_status": {
+    "synthetic_golden_tau_b": 0.83,
+    "human_pilot_n_pairs": 30,
+    "human_pilot_cohens_kappa_v1": -0.02,
+    "human_pilot_cohens_kappa_v2": 0.52,
+    "human_tau_b_gate": 0.7,
+    "human_gate_met": false,
+    "note": "The 30-pair human pilot validated the harness + rubric (kappa improved v1->v2 from -0.02 to +0.52 after the rubric rewrite). The production-grade tau-b >= 0.7 gate is pending the ~200-pair Prolific run. These numbers are characterized, not aspirational; see docs/blog/methodology.md."
+  }
+}

@@ -22,7 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from cascadia_judge.aggregation import aggregate
-from cascadia_judge.orchestrator import JudgeOrchestrator
+from cascadia_judge.orchestrator import PairEvaluator
 from cascadia_judge.storage.base import PendingPair, ShadowPairStorage
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class Poller:
         self,
         *,
         storage: ShadowPairStorage,
-        orchestrator: JudgeOrchestrator,
+        orchestrator: PairEvaluator,
         config: PollerConfig | None = None,
     ) -> None:
         self._storage = storage

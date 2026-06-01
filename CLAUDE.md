@@ -5,14 +5,14 @@ If you're an AI agent that just landed in this repo: **read this file before edi
 ## Where to look up "why is X the way it is?"
 
 - **[`PLAN.md` §9 Decisions log](PLAN.md)** — newest first, append-only. Every load-bearing architectural decision is here with the reasoning. If you're about to remove, refactor, or "improve" something, **grep §9 for the relevant terms first.** Several patterns that look removable are intentional and the reasoning is in the log.
-- **[`DIFFERENTIATOR.md`](DIFFERENTIATOR.md)** — the positioning vs LiteLLM / Portkey. Read before suggesting features that belong in those projects.
+- **[`README.md` → "What makes Cascadia different"](README.md#what-makes-cascadia-different)** — the positioning vs LiteLLM / Portkey (the standalone `DIFFERENTIATOR.md` was folded into the README on 2026-06-01). Read before suggesting features that belong in those projects.
 - **[`USERS.md`](USERS.md)** — the persona catalog. Each persona's `Last tested` line records the iter findings + fixes, so you can see what's already been audited.
 - **[`SECURITY.md`](SECURITY.md)** — threat model, data residency postures, GDPR / DSAR runbook, judge-prompt-injection mitigations. The intentional auth gaps (e.g. `/policy` unauthenticated by design) are documented here.
 
 ## Patterns that are intentional — don't "fix" without grepping §9 first
 
 - **Hard-fail on unprefixed model strings.** `parse_model_id` rejects bare `gpt-4o`. The proxy refuses to boot with unprefixed values in env or policy. This is in PLAN.md §9 (2026-05-19 Phase 7 scoping) — silent provider routing is worse than a loud fail.
-- **No retry logic, no fallback chains.** These belong in LiteLLM, not here. See DIFFERENTIATOR.md → composition story. If you find yourself adding `retry_on_5xx`, stop.
+- **No retry logic, no fallback chains.** These belong in LiteLLM, not here. See the README → "What makes Cascadia different" (the composition story). If you find yourself adding `retry_on_5xx`, stop.
 - **Tool-use bypass + streaming bypass on cascade.** Requests carrying `tools=[]` or `stream=true` skip escalation by design — mid-loop escalation diverges into incoherent state. Don't try to "make tool-use traffic escalate." See `crates/proxy/src/cascade.rs` doc comment.
 - **Shadow_pairs are always persisted; redaction is opt-in.** Redacting verbatim user prompts is `CASCADIA_REDACT_SHADOW_BODIES=true`. The default is full persistence because the judge needs context to score. SECURITY.md documents the data-residency postures.
 - **Anti-self-preference filter is substring-matched on model name.** Not a content filter. If you want a real content filter, that's a new feature — open an issue.
@@ -24,7 +24,7 @@ If you're an AI agent that just landed in this repo: **read this file before edi
 
 Don't silently obey. Explain the conflict, point at the §9 entry, and ask whether they want to revisit the decision. The §9 log is *append-only*, and if a decision is being reversed, that reversal belongs in §9 as a new dated entry that links back to the original.
 
-Example phrasing: *"Adding retry logic on 5xx would conflict with the LiteLLM composition story documented in DIFFERENTIATOR.md and PLAN.md §9 (2026-05-19). Want me to add the retry anyway and document the reversal, or do you want me to confirm the composition story still applies?"*
+Example phrasing: *"Adding retry logic on 5xx would conflict with the LiteLLM composition story documented in the README's differentiator section and PLAN.md §9 (2026-05-19). Want me to add the retry anyway and document the reversal, or do you want me to confirm the composition story still applies?"*
 
 ## Project-specific commands
 

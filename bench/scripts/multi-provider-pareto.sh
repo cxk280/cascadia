@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 7.3 — Multi-provider Pareto sweep.
+# Phase 7.3 - Multi-provider Pareto sweep.
 #
 # Drives the same closed-loop benchmark as `pareto-frontier.sh` but seeds the
 # policy file with *mixed-provider* clusters (e.g. `groq/llama-3.3-70b` cheap
@@ -13,7 +13,7 @@
 # prefix, not the network endpoint), so the dashboard's clusters / Pareto
 # pages render correct provider facets without requiring real provider
 # credentials. The judge-score injection below is varied per cluster so the
-# mixed-provider cluster lands with a visibly higher mean quality — the
+# mixed-provider cluster lands with a visibly higher mean quality - the
 # headline number the demo script anchors on.
 #
 # Pre-conditions:
@@ -24,8 +24,8 @@
 #   $ bench/scripts/multi-provider-pareto.sh [n_requests]
 #
 # Outputs:
-#   stdout — human-readable summary including the mixed-provider headline
-#   /tmp/cascadia-pareto-multi.json — machine-readable Pareto points
+#   stdout - human-readable summary including the mixed-provider headline
+#   /tmp/cascadia-pareto-multi.json - machine-readable Pareto points
 
 set -euo pipefail
 
@@ -48,7 +48,7 @@ echo "==> Writing multi-provider policy"
 # variable in the chart is the provider mix.
 # `cluster::classify` produces `cluster-{0..N-1}` from the prompt hash, so
 # the policy keys MUST follow that naming. cluster-1 is wired as the
-# mixed-provider headline (Groq cheap → OpenAI expensive) — same cluster
+# mixed-provider headline (Groq cheap -> OpenAI expensive) - same cluster
 # that the demo-script anchors on.
 cat > "$POLICY_FILE" <<JSON
 {
@@ -102,7 +102,7 @@ PIDS+=("$!")
 
 # All four providers configured. Each points at the same mock-upstream URL
 # because we're benchmarking the cascade-routing machinery, not the network
-# topology — the proxy still records distinct `events.provider` because it
+# topology - the proxy still records distinct `events.provider` because it
 # parses the prefix off the policy's model strings before dispatch.
 CASCADIA_OPENAI_API_KEY=anything \
 CASCADIA_OPENAI_BASE_URL="http://127.0.0.1:${MOCK_PORT}" \
@@ -120,7 +120,7 @@ PIDS+=("$!")
 
 # Note: all three providers configured here (openai/groq/xai) dispatch
 # through the OpenAI-compat adapter, so they all speak the same wire shape
-# as the mock-upstream. Anthropic is intentionally excluded — its adapter
+# as the mock-upstream. Anthropic is intentionally excluded - its adapter
 # POSTs to `/v1/messages` with the Messages-API request shape which the
 # mock doesn't implement. For a true 4-provider live smoke including
 # Anthropic, set the *_BASE_URL envs to real provider hosts and run
@@ -156,7 +156,7 @@ SELECT
     'bench-judge',
     'bench',
     CASE sp.cluster_id
-        WHEN 'cluster-1' THEN 0.90  -- mixed-provider (groq → openai) headline win
+        WHEN 'cluster-1' THEN 0.90  -- mixed-provider (groq -> openai) headline win
         WHEN 'cluster-2' THEN 0.78
         WHEN 'cluster-0' THEN 0.74
         WHEN 'cluster-3' THEN 0.72
@@ -213,7 +213,7 @@ for line in pathlib.Path("/tmp/cascadia-pareto-multi.tsv").read_text().splitline
         "cluster_id": cid,
         "cheap_provider": cheap_p,
         "expensive_provider": exp_p,
-        "providers": f"{cheap_p} → {exp_p}" if cheap_p != exp_p else cheap_p,
+        "providers": f"{cheap_p} -> {exp_p}" if cheap_p != exp_p else cheap_p,
         "escalation_rate": float(esc),
         "mean_quality": float(q),
         "sample_size": int(n),

@@ -27,7 +27,7 @@ Project docs. The root [README.md](../README.md) is the entry point for everythi
 ## Where everything else lives
 
 - **Project state and decisions log** → [`../PLAN.md`](../PLAN.md) (root). Newest entries at the top of §9.
-- **Differentiator vs LiteLLM / Portkey / RouteLLM** → [`../DIFFERENTIATOR.md`](../DIFFERENTIATOR.md).
+- **Differentiator vs LiteLLM / Portkey / RouteLLM** → [`../README.md` → "What makes Cascadia different"](../README.md#what-makes-cascadia-different).
 - **Security policy + data-residency postures** → [`../SECURITY.md`](../SECURITY.md).
 - **Persona test catalog** → [`../USERS.md`](../USERS.md).
 - **Helm chart docs** → [`../deploy/helm/cascadia/README.md`](../deploy/helm/cascadia/README.md).

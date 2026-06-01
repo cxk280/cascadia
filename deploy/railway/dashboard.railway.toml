@@ -7,7 +7,10 @@ dockerfilePath = "deploy/docker/dashboard.Dockerfile"
 [deploy]
 # server.js is emitted by Next.js `output: "standalone"`.
 startCommand = "/nodejs/bin/node server.js"
-healthcheckPath = "/"
+# `/` is now behind the session gate (redirects to /login when logged out),
+# which a health check reads as unhealthy. Point it at the unauthenticated
+# liveness endpoint instead. See dashboard/app/api/healthz/route.ts.
+healthcheckPath = "/api/healthz"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5

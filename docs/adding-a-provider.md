@@ -122,4 +122,4 @@ client → Cascadia (cascade routing, policy learning, judge)
          OpenAI / Anthropic / Bedrock / Vertex / Cohere / Gemini / …
 ```
 
-Point `CASCADIA_OPENAI_BASE_URL` at LiteLLM's proxy URL, use `openai/<litellm-routable-model>` in your policy. You inherit LiteLLM's full provider list with Cascadia's closed-loop quality measurement on top. See [DIFFERENTIATOR.md → The composition story](../DIFFERENTIATOR.md#the-composition-story-the-closer).
+Point `CASCADIA_OPENAI_BASE_URL` at LiteLLM's proxy URL, use `openai/<litellm-routable-model>` in your policy. You inherit LiteLLM's full provider list with Cascadia's closed-loop quality measurement on top. See the [README → "What makes Cascadia different"](../README.md#what-makes-cascadia-different) for the composition story.

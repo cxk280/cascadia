@@ -19,7 +19,7 @@ from cascadia_judge.judges import REGISTRY
 from cascadia_judge.llm.anthropic import AnthropicClient
 from cascadia_judge.llm.base import LLMClient
 from cascadia_judge.llm.openai_compatible import GroqClient, OpenAIClient, XAIClient
-from cascadia_judge.orchestrator import JudgeOrchestrator
+from cascadia_judge.orchestrator import JudgeOrchestrator, PanelOrchestrator
 from cascadia_judge.poller import Poller, PollerConfig
 
 _PROVIDER_CLIENTS = {
@@ -28,6 +28,50 @@ _PROVIDER_CLIENTS = {
     "xai": XAIClient,
     "anthropic": AnthropicClient,
 }
+
+
+def _build_client(provider: str, model: str) -> LLMClient:
+    """Construct one judge client, failing fast with a friendly message if its
+    API key isn't set."""
+    cls = _PROVIDER_CLIENTS[provider]
+    if not os.environ.get(cls.API_KEY_ENV):
+        print(
+            f"missing {cls.API_KEY_ENV} env var (needed for judge {provider}:{model})",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    return cls(model=model)
+
+
+def _parse_panel(spec: str) -> list[tuple[str, str]]:
+    """Parse `provider:model,provider:model,...` into [(provider, model), ...]."""
+    members: list[tuple[str, str]] = []
+    for raw in spec.split(","):
+        part = raw.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            print(
+                f"--panel members must be provider:model, got {part!r}", file=sys.stderr
+            )
+            sys.exit(2)
+        provider, model = part.split(":", 1)
+        provider, model = provider.strip(), model.strip()
+        if provider not in _PROVIDER_CLIENTS:
+            print(
+                f"unknown provider {provider!r} in --panel "
+                f"(choose from {sorted(_PROVIDER_CLIENTS)})",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        if not model:
+            print(f"--panel member {part!r} has an empty model", file=sys.stderr)
+            sys.exit(2)
+        members.append((provider, model))
+    if not members:
+        print("--panel was empty", file=sys.stderr)
+        sys.exit(2)
+    return members
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -39,6 +83,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--provider", default="openai", choices=sorted(_PROVIDER_CLIENTS))
     p.add_argument("--model", default="gpt-4o-mini")
+    p.add_argument(
+        "--panel",
+        default=os.environ.get("CASCADIA_JUDGE_PANEL"),
+        help=(
+            "Cross-provider judge panel as 'provider:model,provider:model,...' "
+            "(e.g. 'openai:gpt-4o-mini,groq:llama-3.3-70b'). Each pair is scored "
+            "by every registered judge against EVERY panel member; the aggregator "
+            "folds the verdicts (anti-self-preference + position-fold). Overrides "
+            "--provider/--model. Defaults to $CASCADIA_JUDGE_PANEL."
+        ),
+    )
     p.add_argument("--judges", nargs="*", help="Judge names to run. Default: all registered.")
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--idle-sleep-s", type=float, default=1.0)
@@ -72,11 +127,24 @@ async def _run(args: argparse.Namespace) -> int:
     from cascadia_judge.storage.postgres import AsyncpgShadowPairStorage
 
     storage = await AsyncpgShadowPairStorage.connect(args.database_url)
-    orchestrator = JudgeOrchestrator(
-        registry=REGISTRY,
-        executor=AsyncioJudgeExecutor(),
-        llm_factory=_live_factory(args.provider, args.model),
-    )
+    executor = AsyncioJudgeExecutor()
+    orchestrator: JudgeOrchestrator | PanelOrchestrator
+    if args.panel:
+        members = _parse_panel(args.panel)
+        clients = [_build_client(provider, model) for provider, model in members]
+        logging.info(
+            "judge panel: %s",
+            ", ".join(f"{p}:{m}" for p, m in members),
+        )
+        orchestrator = PanelOrchestrator(
+            registry=REGISTRY, executor=executor, clients=clients
+        )
+    else:
+        orchestrator = JudgeOrchestrator(
+            registry=REGISTRY,
+            executor=executor,
+            llm_factory=_live_factory(args.provider, args.model),
+        )
     poller = Poller(
         storage=storage,
         orchestrator=orchestrator,

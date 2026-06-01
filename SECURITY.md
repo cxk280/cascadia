@@ -120,6 +120,17 @@ These surfaces have not been hardened in v0 and operators should know:
 
 None of these are unique to Cascadia — they're inherent to LLM-as-judge pipelines — but they belong in the threat model.
 
+### Operator authentication (dashboard)
+
+The operator dashboard is gated by email + password auth (added 2026-06-01; see PLAN.md §9). Posture:
+
+- **Passwords:** Argon2id (argon2-cffi), never stored or logged in plaintext; transparent rehash on login when params advance.
+- **Sessions:** opaque 256-bit CSPRNG tokens, **not JWT**. Only the SHA-256 is persisted (`auth_sessions`); the raw token lives solely in an `httpOnly`, `SameSite=Lax`, `Secure`-in-production cookie. Sessions are revocable on the spot (logout, or admin) and expire at 30 days — a DB leak can't be replayed without preimaging SHA-256.
+- **Email verification:** signup is double opt-in. Confirmation tokens are single-use, 24 h, and again stored only as SHA-256. The session is issued **after** verification, never at signup.
+- **Roles:** `operator` / `admin` / `reviewer`, assigned server-side only (first account → admin; never taken from the request body). Middleware gates the calibration surface to admin/reviewer and confines reviewers to it. Validation is authoritative server-side and **fails closed** — an unreachable auth service denies access.
+- **Account enumeration — deliberate tradeoffs.** Login is generic (`invalid email or password`) and spends a dummy Argon2 verify on unknown emails to equalize timing. Signup (`409 email exists`), the login *not-verified* `403`, and the verify endpoint *do* reveal that an address is registered — unavoidable for a product that refuses silent duplicate accounts and must tell users to check their inbox; `resend-verification` stays generic to limit it.
+- **Transport:** the dashboard-api is server-to-server only (browser → Next.js route handlers → dashboard-api), same posture as the calibration write surface; the raw session/verification tokens never reach browser JS.
+
 ### Unauthenticated read endpoints (information disclosure by design)
 
 The proxy exposes two read-only endpoints with no auth gate:

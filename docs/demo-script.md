@@ -95,7 +95,7 @@ This is the differentiator most candidates fail at. Walk through:
 
 ## Differentiator close (30s)
 
-Pull from [DIFFERENTIATOR.md](../DIFFERENTIATOR.md):
+Pull from the [README → "What makes Cascadia different"](../README.md#what-makes-cascadia-different):
 
 > *"LiteLLM and Portkey are provider plumbing with human-authored routing rules. Cascadia is the layer that learns what those rules should be. They compose — stack Cascadia on top of LiteLLM if you want both. The thing competitors structurally can't ship is the closed loop, because they don't generate the shadow data. We do, as a side effect of serving traffic."*
 
@@ -105,7 +105,7 @@ Then point at the architecture diagram on the README and stop talking.
 
 | Question | Answer |
 |---|---|
-| *"Isn't this just LiteLLM?"* | "LiteLLM is plumbing — 100+ providers behind one OpenAI shape. Cascadia is the policy layer above it. They compose. See `DIFFERENTIATOR.md` for the long answer." |
+| *"Isn't this just LiteLLM?"* | "LiteLLM is plumbing — 100+ providers behind one OpenAI shape. Cascadia is the policy layer above it. They compose. See the README's 'What makes Cascadia different' for the long answer." |
 | *"How big is the calibration set?"* | "30 pairs, 2 reviewers, real humans. That's a pilot, not a publishable claim. Production-grade is a 200-pair Prolific run (~$300) that's queued — see PLAN.md `[[cascadia-prolific-deferred]]`." |
 | *"What's the proxy overhead?"* | "P99 ≈ 5.6ms on macOS loopback. Target was <2ms on tuned Linux; that's deferred to Phase 6 — characterized, not buried." |
 | *"What providers do you support?"* | "OpenAI, Anthropic, Groq today. vLLM/Together queued in Phase 7. Hard-fail on unprefixed model strings — locked decision in PLAN §9, 2026-05-19." |
@@ -118,11 +118,11 @@ Then point at the architecture diagram on the README and stop talking.
 - [ ] `/pareto` page renders the chart (dashboard's window default must be wide enough to include the loaded data — bug fixed in Task #3).
 - [ ] `/activity` page loads without HTTP 500 (bug fixed in Task #3).
 - [ ] Browser zoomed to a level where the four-cluster scatter is legible.
-- [ ] `docs/blog/methodology.md` and `DIFFERENTIATOR.md` open in adjacent tabs in case they ask.
+- [ ] `docs/blog/methodology.md` and the README's "What makes Cascadia different" open in adjacent tabs in case they ask.
 
 ## Post-demo follow-ups (have ready)
 
 - Link to public GitHub repo with the README chart.
 - Link to `docs/blog/methodology.md` for the rigor argument.
-- Link to `DIFFERENTIATOR.md` for the LiteLLM/Portkey comparison.
+- Link to the README's "What makes Cascadia different" for the LiteLLM/Portkey comparison.
 - One-line bio: *"Senior DevOps + AI engineer, MIT-licensed flagship — closed-loop quality measurement is the differentiator, the Pareto chart is the artifact, the methodology blog is the credibility."*

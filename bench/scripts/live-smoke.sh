@@ -130,7 +130,7 @@ smoke_provider() {
     local cluster="${provider}-cluster"
     # The cascade classifier hashes the request into a bucket. We send the
     # request with a forced cluster id by setting a sentinel header that the
-    # proxy passes through to classification — but in v0 there's no such
+    # proxy passes through to classification - but in v0 there's no such
     # header, so we instead set cluster_buckets=0 (force default_cluster) and
     # rotate the default_cluster by patching the policy file once per smoke.
     cat > "$POLICY_FILE" <<JSON
@@ -143,7 +143,7 @@ smoke_provider() {
 }
 JSON
     sleep 1.5  # let the watcher pick up the new file
-    echo "    request → ${provider}"
+    echo "    request -> ${provider}"
     local out
     out="$(curl -sS -w '\nHTTP_STATUS=%{http_code}\n' "http://127.0.0.1:${PROXY_PORT}/v1/chat/completions" \
             -H 'Content-Type: application/json' \
@@ -153,10 +153,10 @@ JSON
     if [[ "$status" == "200" ]]; then
         local content
         content="$(echo "$out" | sed '/^HTTP_STATUS=/d' | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("choices",[{}])[0].get("message",{}).get("content","")[:80])' 2>/dev/null || echo "(parse fail)")"
-        echo "      ✓ ${provider}: $content"
+        echo "      [OK] ${provider}: $content"
         PASS+=("$provider")
     else
-        echo "      ✗ ${provider}: HTTP $status"
+        echo "      [X] ${provider}: HTTP $status"
         echo "$out" | sed '/^HTTP_STATUS=/d' | head -8
         FAIL+=("$provider")
     fi
@@ -197,15 +197,15 @@ JSON
     status="$(echo "$out" | grep '^HTTP_STATUS=' | cut -d= -f2)"
     if [[ "$status" == "200" ]]; then
         if echo "$out" | sed '/^HTTP_STATUS=/d' | python3 -c 'import sys,json; d=json.load(sys.stdin); calls=d.get("choices",[{}])[0].get("message",{}).get("tool_calls"); assert calls and len(calls)>0; assert calls[0]["function"]["name"]=="get_weather"; args=calls[0]["function"]["arguments"]; assert isinstance(args, str); json.loads(args); print("OK")' 2>/dev/null; then
-            echo "      ✓ tool-use: Anthropic returned OpenAI-shape tool_calls with parseable arguments"
+            echo "      [OK] tool-use: Anthropic returned OpenAI-shape tool_calls with parseable arguments"
             PASS+=("anthropic-tools")
         else
-            echo "      ✗ tool-use: response did not round-trip cleanly"
+            echo "      [X] tool-use: response did not round-trip cleanly"
             echo "$out" | sed '/^HTTP_STATUS=/d' | head -20
             FAIL+=("anthropic-tools")
         fi
     else
-        echo "      ✗ tool-use: HTTP $status"
+        echo "      [X] tool-use: HTTP $status"
         echo "$out" | sed '/^HTTP_STATUS=/d' | head -8
         FAIL+=("anthropic-tools")
     fi
