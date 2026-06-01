@@ -34,7 +34,7 @@ postures, ranked by restrictiveness:
 
 Operators in regulated environments should pick a posture explicitly. The default is full persistence; document your choice in your deploy runbook.
 
-The dashboard's [`/health` page](https://cascadia-dashboard-dev.up.railway.app/health) renders the current posture so an operator answering a DSAR can see at a glance what's stored without grepping env vars.
+The dashboard's [`/health` page](https://cascadia-dashboard.example.com/health) renders the current posture so an operator answering a DSAR can see at a glance what's stored without grepping env vars.
 
 ### GDPR / DSAR (data subject access requests)
 

@@ -325,7 +325,7 @@ Closes the last deferred Phase 7 item. The headline differentiator now visibly d
 | `dashboard/app/clusters/page.tsx` | Already landed prior to this session: renders a "Providers" column with `cheap → expensive` for mixed clusters (accent-colored) and bare provider name for single-provider clusters. |
 | `docs/demo-script.md` | Already updated with the mixed-provider headline table (`cluster-mixed` row in the Pareto walkthrough). |
 
-**Acceptance verified end-to-end on the live dev URL:** `https://cascadia-dashboard-dev.up.railway.app/clusters` renders `cluster-mixed` with providers `groq → openai`, 69.7% escalation, 59.6% mean score (highest of four clusters). Confirmed by grep of the rendered HTML. Local SQL projection on the freshly-benched DB shows `events.provider` attribution per tier: `cluster-1` has 15 `groq` events (non-escalated) + 5 `openai` events (escalated); `cluster-3` has 14 `xai` events + 6 `openai` events.
+**Acceptance verified end-to-end on the live dev URL:** `https://cascadia-dashboard.example.com/clusters` renders `cluster-mixed` with providers `groq → openai`, 69.7% escalation, 59.6% mean score (highest of four clusters). Confirmed by grep of the rendered HTML. Local SQL projection on the freshly-benched DB shows `events.provider` attribution per tier: `cluster-1` has 15 `groq` events (non-escalated) + 5 `openai` events (escalated); `cluster-3` has 14 `xai` events + 6 `openai` events.
 
 **Surprises:**
 
@@ -363,11 +363,11 @@ Streaming was the last big deferred piece of the Phase 7 family. Closed today. A
 
 ### 2026-05-20 — Live dev deployed on Railway (`cascadia-dev` project, `dev` environment)
 
-The dev environment is live at **<https://cascadia-dashboard-dev.up.railway.app>**. Phase 3/4 closed (was blocked on Railway login expiring). Five services + Postgres in the `cascadia-dev` project's `dev` environment, all reporting SUCCESS:
+The dev environment is live at **<https://cascadia-dashboard.example.com>**. Phase 3/4 closed (was blocked on Railway login expiring). Five services + Postgres in the `cascadia-dev` project's `dev` environment, all reporting SUCCESS:
 
 - `cascadia-proxy` — Rust hot path, listens on `[::]:8080` (IPv6 dual-stack — required by Railway's private network)
 - `cascadia-dashboard-api` — FastAPI read side, listens on `[::]:8080`
-- `cascadia-dashboard` — Next.js, public domain `cascadia-dashboard-dev.up.railway.app`
+- `cascadia-dashboard` — Next.js, public domain `cascadia-dashboard.example.com`
 - `cascadia-judge-worker` — background; polls shadow_pairs
 - `cascadia-policy-controller` — background; refits per-cluster thresholds
 - `Postgres-cKur` — managed Postgres 16

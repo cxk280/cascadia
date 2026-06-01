@@ -14,7 +14,7 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "https://cascadia-proxy-dev.up.railway.app",
+      "value": "http://localhost:8080",
       "type": "string"
     }
   ],

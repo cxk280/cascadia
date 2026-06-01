@@ -51,7 +51,7 @@ The `Makefile` at the repo root wraps the most-used recipes; see `make verify` f
 The user runs persona-based UX testing per `USERS.md`. Key rules:
 
 - **Cap at 3 iterations per persona.** Don't spiral past the cap.
-- **Test against the live dev URL** (`cascadia-dashboard-dev.up.railway.app`, `cascadia-proxy-dev.up.railway.app`), not localhost — that's what real users see.
+- **Test against your live dev deployment** (the hosted dashboard + proxy URLs), not localhost — that's what real users see.
 - **Sub-agents log in-character.** When spawning a persona via the Agent tool, write the prompt so the agent's voice + frustration shows through, not a sanitized "as the user I tried X" report.
 - **Engineers fix; personas complain.** The persona's job is to surface findings. Your job is to fix them — including nits.
 - **Mark completion in `USERS.md`** when iterations close, with the date + a one-line per-finding summary.
