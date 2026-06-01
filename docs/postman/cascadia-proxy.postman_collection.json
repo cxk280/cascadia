@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "c5d1a0e2-0000-4a00-9000-cascadiaproxy01",
     "name": "Cascadia Proxy",
-    "description": "OpenAI-compatible requests against a Cascadia proxy.\n\nSetup (once):\n1. Import this collection AND the `cascadia-dev` environment file next to it.\n2. Select the `cascadia-dev` environment (top-right in Postman).\n3. Paste your proxy bearer token into the environment's `bearerToken` variable.\n   Get it from Railway: cascadia-proxy service -> Variables -> CASCADIA_PROXY_BEARER_TOKEN.\n4. Send 'Chat completion (cascade)'.\n\nThe `/policy` and `/config` requests are public (no auth) and are handy for confirming which cascade is live before sending paid traffic.",
+    "description": "OpenAI-compatible requests against a Cascadia proxy.\n\nSetup (once):\n1. Import this collection AND the `cascadia-dev` environment file next to it.\n2. Select the `cascadia-dev` environment (top-right in Postman).\n3. Paste your proxy bearer token into the environment's `bearerToken` variable.\n   Get it from Railway: cascadia-proxy service -> Variables -> CASCADIA_PROXY_BEARER_TOKEN.\n4. Send 'Chat completion (cascade)'.\n\nGenerating dashboard data:\n- 'Chat completion (cascade)' has a pre-request script that picks a RANDOM prompt\n  from a built-in list on every send, so just hitting Run in the Collection Runner\n  (e.g. 80 iterations) spreads traffic across all clusters with no edits.\n- For curated/repeatable prompts instead, attach `cascadia-prompts.json` (next to\n  this file) as the Runner's data file; the script uses the file's `prompt` column\n  when present and falls back to the built-in list otherwise.\n\nThe `/policy` and `/config` requests are public (no auth) and are handy for confirming which cascade is live before sending paid traffic.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -21,6 +21,52 @@
   "item": [
     {
       "name": "Chat completion (cascade)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Pick a prompt for this send. Priority:",
+              "//  1. the Runner data file's `prompt` column (cascadia-prompts.json), if attached;",
+              "//  2. otherwise a random prompt from the built-in list below.",
+              "// Either way the prompt varies per send, so traffic spreads across all clusters",
+              "// (Cascadia chooses a cluster by hashing the prompt) and the judges get variety.",
+              "const builtIn = [",
+              "  'In one clear paragraph, explain how TCP congestion control works.',",
+              "  'Write a Python function that returns the nth Fibonacci number.',",
+              "  'What is the capital of Australia?',",
+              "  'Give me a careful, detailed answer: why is the sky blue?',",
+              "  'Summarize the plot of Hamlet in three sentences.',",
+              "  'Write a SQL query to find the second-highest salary in an employees table.',",
+              "  'Explain the difference between a process and a thread, briefly.',",
+              "  'A bat and ball cost $1.10 total; the bat costs $1 more than the ball. How much is the ball?',",
+              "  'Translate \"good morning, how are you?\" into French.',",
+              "  'What are the tradeoffs between REST and gRPC?',",
+              "  'Write a haiku about distributed systems.',",
+              "  'Explain Big-O notation to a new programmer in one paragraph.',",
+              "  'What causes seasons on Earth?',",
+              "  'Refactor this idea into a one-sentence elevator pitch: a proxy that routes cheap-vs-expensive LLM calls.',",
+              "  'List three common causes of memory leaks in long-running services.',",
+              "  'What is the time complexity of binary search and why?',",
+              "  'Give a one-paragraph overview of how HTTPS establishes trust.',",
+              "  'Write a regular expression that matches a US ZIP code.',",
+              "  'Explain eventual consistency with a real-world analogy.',",
+              "  'What is the boiling point of water at sea level, in Celsius and Fahrenheit?',",
+              "  'Describe the CAP theorem in two sentences.',",
+              "  'Write a short bash one-liner to count lines in all .txt files in a directory.',",
+              "  'Why do we use indexes in databases, and what do they cost?',",
+              "  'Explain the Pareto frontier in one clear paragraph.'",
+              "];",
+              "const fromData = pm.iterationData.get('prompt');",
+              "const prompt = (fromData && String(fromData).trim())",
+              "  ? fromData",
+              "  : builtIn[Math.floor(Math.random() * builtIn.length)];",
+              "pm.variables.set('prompt', prompt);"
+            ]
+          }
+        }
+      ],
       "request": {
         "method": "POST",
         "header": [
@@ -29,14 +75,14 @@
         "body": {
           "mode": "raw",
           "options": { "raw": { "language": "json" } },
-          "raw": "{\n  \"model\": \"auto\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Explain the Pareto frontier in one clear paragraph.\" }\n  ]\n}"
+          "raw": "{\n  \"model\": \"auto\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"{{prompt}}\" }\n  ]\n}"
         },
         "url": {
           "raw": "{{baseUrl}}/v1/chat/completions",
           "host": ["{{baseUrl}}"],
           "path": ["v1", "chat", "completions"]
         },
-        "description": "The core cascade call. `model: \"auto\"` lets Cascadia pick the cheap tier first and escalate to the expensive tier only when its confidence is below the cluster threshold. Uses the collection's bearer auth ({{bearerToken}}). The response carries an `x-cascadia-request-id` header you can correlate in the dashboard."
+        "description": "The core cascade call. `model: \"auto\"` lets Cascadia pick the cheap tier first and escalate to the expensive tier only when its confidence is below the cluster threshold. The pre-request script sets {{prompt}} to a varied value on every send (built-in list, or the Runner data file's `prompt` column). Uses the collection's bearer auth ({{bearerToken}}). The response carries an `x-cascadia-request-id` header you can correlate in the dashboard.\n\nTo generate dashboard data: open the Collection Runner, select ONLY this request, set ~80 iterations + a small delay, and Run."
       }
     },
     {
@@ -56,7 +102,7 @@
           "host": ["{{baseUrl}}"],
           "path": ["v1", "chat", "completions"]
         },
-        "description": "Streaming requests (stream:true) intentionally skip escalation by design - mid-loop escalation would diverge into incoherent state. Included so you can see the bypass behavior."
+        "description": "Streaming requests (stream:true) intentionally skip escalation by design - mid-loop escalation would diverge into incoherent state. Included so you can see the bypass behavior. Do NOT include this in a data-generation run - it won't produce shadow pairs."
       }
     },
     {

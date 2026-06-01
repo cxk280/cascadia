@@ -4,6 +4,7 @@ Importable Postman files for hitting a Cascadia proxy without hand-rolling `curl
 
 - **`cascadia-proxy.postman_collection.json`** — the requests (chat completion, streaming, `/policy`, `/config`).
 - **`cascadia-dev.postman_environment.json`** — the `dev` environment (`baseUrl` + an empty `bearerToken` for you to fill in).
+- **`cascadia-prompts.json`** — an optional curated prompt list (one `prompt` per row) you can attach as the Collection Runner's *data file*.
 
 ## One-time setup
 
@@ -15,6 +16,20 @@ Importable Postman files for hitting a Cascadia proxy without hand-rolling `curl
 4. Open **Chat completion (cascade)** and hit **Send**.
 
 `baseUrl` defaults to the dev proxy (`https://cascadia-proxy-dev.up.railway.app`). Point it at any other Cascadia proxy by editing the variable.
+
+## Generating dashboard data (the Collection Runner)
+
+One request barely moves the dashboard — you want volume *with varied prompts*, because Cascadia picks a cluster by hashing the prompt, so identical prompts all land in one cluster.
+
+1. Sanity-check first (free): send **Get policy (public)** to confirm the live cascade, then **Chat completion (cascade)** once and confirm a **200** with a real answer.
+2. Click the **Cascadia Proxy** collection → **Run**.
+3. **Select only "Chat completion (cascade)"** (uncheck streaming / `/policy` / `/config` — they don't generate cascade data).
+4. Set **Iterations ≈ 80** and a small **Delay** (≈ 300 ms).
+5. **Run.** You want every row green (`200`).
+
+The request's **pre-request script auto-varies the prompt on every send**, so this works with no edits. For curated/repeatable prompts, set the Runner's **Data file** to `cascadia-prompts.json` — the script prefers the file's `prompt` column when present and falls back to its built-in list otherwise. (With a data file, iterations default to the row count; raise it to loop the list.)
+
+Then wait ~1–2 min for the judge-worker to score the shadow pairs, and check the dashboard: **Activity** (immediate), **Overview**, **Clusters**, **Pareto** (after judging).
 
 ## Notes
 
