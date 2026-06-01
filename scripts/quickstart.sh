@@ -30,7 +30,6 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
 
-PG_URL="${CASCADIA_DATABASE_URL:-postgres://cascadia:cascadia@localhost:5432/cascadia}"
 POLICY_FILE="${CASCADIA_POLICY_FILE:-/tmp/cascadia-policy.json}"
 TRAFFIC="${QUICKSTART_TRAFFIC:-120}"
 COMPOSE="deploy/compose/docker-compose.yml"
@@ -70,6 +69,50 @@ pick_port() {
   printf '%s\n' "$_p"
 }
 
+# db_is_ours PORT -> exit 0 if a Postgres answering on 127.0.0.1:PORT is the
+# cascadia DB (right role + db). Lets us reuse our own container rather than
+# treating it as a conflict (no port-creep across runs).
+db_is_ours() {
+  command -v psql >/dev/null 2>&1 || return 1
+  PGPASSWORD=cascadia psql "postgresql://cascadia:cascadia@127.0.0.1:$1/cascadia" \
+    -tAc 'select 1' >/dev/null 2>&1
+}
+
+# choose_db_port PREFERRED -> a host port to publish the cascadia container on.
+# Uses the preferred port if it's free OR already our cascadia DB; otherwise a
+# FOREIGN Postgres owns it (e.g. a Homebrew/Postgres.app install on 5432) and
+# we skip to the next port so it can't shadow our container.
+choose_db_port() {
+  _pref="$1"; _p="$_pref"; _tries=0
+  while :; do
+    if ! port_in_use "$_p"; then printf '%s\n' "$_p"; return; fi
+    if db_is_ours "$_p"; then printf '%s\n' "$_p"; return; fi
+    _tries=$((_tries + 1))
+    if [ "$_tries" -gt 20 ]; then
+      echo "[quickstart] ERROR: no usable Postgres port near $_pref (tried 20)" >&2
+      exit 1
+    fi
+    _n=$((_p + 1))
+    echo "[quickstart]       postgres: :$_p is a non-cascadia server -> trying $_n" >&2
+    _p="$_n"
+  done
+}
+
+# Resolve the Postgres host port + DSN. The container always listens on 5432
+# internally; CASCADIA_PG_HOST_PORT (read by docker-compose.yml) controls the
+# host-side publish so a foreign Postgres on :5432 won't block us. We export
+# CASCADIA_DATABASE_URL so the proxy, dashboard-api, and the pareto-frontier
+# traffic driver all share the resolved DSN. Use 127.0.0.1 (not localhost) to
+# force IPv4 onto the published port.
+DB_PORT="$(choose_db_port "${CASCADIA_PG_PORT:-5432}")"
+export CASCADIA_PG_HOST_PORT="$DB_PORT"
+if [ -n "${CASCADIA_DATABASE_URL:-}" ]; then
+  PG_URL="$CASCADIA_DATABASE_URL"
+else
+  PG_URL="postgres://cascadia:cascadia@127.0.0.1:$DB_PORT/cascadia"
+fi
+export CASCADIA_DATABASE_URL="$PG_URL"
+
 PROXY_PORT="$(pick_port proxy        "${CASCADIA_LISTEN_PORT:-8080}")"
 MOCK_PORT="$(pick_port mock-upstream "${CASCADIA_MOCK_PORT:-18091}")"
 API_PORT="$(pick_port dashboard-api  "${CASCADIA_DASHBOARD_PORT:-18082}")"
@@ -87,9 +130,18 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "[quickstart] ports: proxy=$PROXY_PORT mock=$MOCK_PORT dashboard-api=$API_PORT dashboard=$DASH_PORT"
-echo "[quickstart] 1/5 - bringing up Postgres..."
+echo "[quickstart] ports: postgres=$DB_PORT proxy=$PROXY_PORT mock=$MOCK_PORT dashboard-api=$API_PORT dashboard=$DASH_PORT"
+echo "[quickstart] 1/5 - bringing up Postgres on host port $DB_PORT..."
 docker compose -f "$COMPOSE" up -d
+echo "[quickstart]       waiting for Postgres to accept connections on :$DB_PORT..."
+for _ in $(seq 1 60); do
+  if command -v psql >/dev/null 2>&1; then
+    db_is_ours "$DB_PORT" && break
+  else
+    port_in_use "$DB_PORT" && break
+  fi
+  sleep 0.5
+done
 
 # Step 2 writes a starter policy file (the knob semantics are echoed to the
 # terminal below so they show at runtime). See "## Tuning for cost" in the
