@@ -35,7 +35,7 @@ Three things competitors structurally don't do: **counterfactual shadow routing*
 ## Quick start
 
 ```bash
-$ ./scripts/quickstart.sh
+./scripts/quickstart.sh
 ```
 
 One command: brings up Postgres, writes a starter policy, builds and starts the mock upstream + proxy, drives synthetic traffic to fill the Pareto data, and launches the dashboard-api + dashboard. It prints each step (and the policy knobs) as it runs; Ctrl-C tears it down. Proxy → `localhost:8080` (OpenAI-compatible at `/v1`); dashboard → `localhost:3000` (first visit → `/signup`). Override `CASCADIA_DATABASE_URL`, `CASCADIA_POLICY_FILE`, `CASCADIA_LISTEN_PORT`, `QUICKSTART_TRAFFIC`, or `CASCADIA_AUTH_DISABLED` via the environment.
