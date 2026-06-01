@@ -3,13 +3,18 @@ import { ProxyLivePip } from "./ProxyLivePip";
 import { ProxyReachabilityBanner } from "./ProxyReachabilityBanner";
 import { UserMenu } from "./UserMenu";
 
+// Calibration labeling (/calibrate, /calibrate/label) is intentionally NOT in
+// the operator nav. It's a periodic methodology activity (establishing the
+// judge ensemble's agreement with humans), not a daily-driver feature — the
+// operator consumes the calibrated judge, they don't hand-label pairs. The
+// routes still work by direct URL; when roles land they should be gated to
+// admin/reviewer. The /calibrate/rubric page stays public (methodology
+// contract). See PLAN.md §9 (2026-06-01).
 const NAV: Array<{ label: string; href: string; section: string }> = [
   { section: "OPERATIONS", label: "Overview", href: "/overview" },
   { section: "OPERATIONS", label: "Pareto", href: "/pareto" },
   { section: "OPERATIONS", label: "Clusters", href: "/clusters" },
   { section: "OPERATIONS", label: "Recent activity", href: "/activity" },
-  { section: "CONFIG", label: "Calibration", href: "/calibrate" },
-  { section: "CONFIG", label: "Label pairs", href: "/calibrate/label" },
   { section: "META", label: "Health", href: "/health" },
 ];
 
