@@ -169,9 +169,9 @@ choose_db_port() {
 DB_PORT="$(choose_db_port "${CASCADIA_PG_PORT:-5432}")"
 export CASCADIA_PG_HOST_PORT="$DB_PORT"
 if [ -n "${CASCADIA_DATABASE_URL:-}" ]; then
-  PG_URL="$CASCADIA_DATABASE_URL"
+  PG_URL="$CASCADIA_DATABASE_URL"; OWN_DB=""   # user's DB - we never truncate it
 else
-  PG_URL="postgres://cascadia:cascadia@127.0.0.1:$DB_PORT/cascadia"
+  PG_URL="postgres://cascadia:cascadia@127.0.0.1:$DB_PORT/cascadia"; OWN_DB=1
 fi
 export CASCADIA_DATABASE_URL="$PG_URL"
 
@@ -308,8 +308,19 @@ done
 
 # --- step 4: traffic --------------------------------------------------------
 if [ -n "$LIVE" ]; then
+  # Clean slate: clear synthetic seed rows so the dashboard shows ONLY live
+  # data (otherwise leftover rows from a prior mock run or seed-dev-postgres.py
+  # linger in the dashboard's window and look hard-coded). Only ever touches
+  # our own throwaway docker DB - never a user-supplied CASCADIA_DATABASE_URL.
+  if [ -n "$OWN_DB" ] && [ "${CASCADIA_LIVE_KEEP_DATA:-}" != "1" ] && command -v psql >/dev/null 2>&1; then
+    echo "[quickstart] 4/5 - clearing synthetic data for a clean live slate (CASCADIA_LIVE_KEEP_DATA=1 to keep)..."
+    PGPASSWORD=cascadia psql "$PG_URL" -c "TRUNCATE TABLE judge_scores, shadow_pairs, events;" >/dev/null 2>&1 \
+      || echo "[quickstart]       (couldn't clear tables; dashboard may show leftover rows)"
+  elif [ -z "$OWN_DB" ]; then
+    echo "[quickstart] 4/5 - using your CASCADIA_DATABASE_URL; NOT auto-clearing it (leftover rows may show)."
+  fi
   if [ "$TRAFFIC" != "0" ]; then
-    echo "[quickstart] 4/5 - driving $TRAFFIC REAL requests through the cascade (real API cost)..."
+    echo "[quickstart]       driving $TRAFFIC REAL requests through the cascade (real API cost)..."
     CATS=("Explain in one paragraph:" "Write a short function that" \
           "What is the capital of" "Give me a careful, detailed answer about")
     for i in $(seq 1 "$TRAFFIC"); do
@@ -321,7 +332,7 @@ if [ -n "$LIVE" ]; then
     done
     echo "[quickstart]       traffic done; shadow pairs are queued for the judge panel."
   else
-    echo "[quickstart] 4/5 - skipping traffic (QUICKSTART_TRAFFIC=0); send your own to populate the dashboard."
+    echo "[quickstart]       no auto-traffic (QUICKSTART_TRAFFIC=0); send your own and watch it populate."
   fi
 elif [ "$TRAFFIC" != "0" ]; then
   # Mock: the self-contained pareto-frontier harness seeds synthetic data. It
