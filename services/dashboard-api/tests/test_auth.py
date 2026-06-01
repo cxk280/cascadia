@@ -92,6 +92,34 @@ def test_signup_issues_no_session_and_emails_a_link(client, email_sender):
     assert email_sender.latest_token_for("ops@cascadia.dev")
 
 
+# --- signup can be sealed (CASCADIA_SIGNUP_DISABLED) --------------------------
+
+def test_sealed_instance_allows_bootstrap_then_closes(email_sender):
+    store = InMemoryAuthStore()
+    app = create_app(
+        store=InMemoryStore(),
+        calibration_store=InMemoryCalibrationStore(),
+        auth_store=store,
+        email_sender=email_sender,
+        signup_disabled=True,
+    )
+    with TestClient(app) as client:
+        # Bootstrap (first) account is allowed even when sealed — a fresh
+        # instance can never lock itself out of creating its admin.
+        first = _signup(client, email="admin@cascadia.dev")
+        assert first.status_code == 201, first.text
+        # Any subsequent signup is refused.
+        second = _signup(client, email="intruder@evil.example")
+        assert second.status_code == 403
+        assert "closed" in second.json()["detail"].lower()
+
+
+def test_open_instance_allows_second_signup(client):
+    # Default (not sealed): multiple accounts are fine.
+    assert _signup(client, email="a@cascadia.dev").status_code == 201
+    assert _signup(client, email="b@cascadia.dev").status_code == 201
+
+
 def test_login_before_verification_is_403(client):
     _signup(client)
     r = client.post(

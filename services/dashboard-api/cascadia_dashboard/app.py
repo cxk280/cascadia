@@ -51,6 +51,7 @@ def create_app(
     calibration_store: CalibrationStore | None = None,
     auth_store: AuthStore | None = None,
     email_sender=None,
+    signup_disabled: bool | None = None,
 ) -> FastAPI:
     """Factory. Pass `store` / `calibration_store` / `auth_store` to inject
     fakes in tests; in production we construct asyncpg-backed stores in the
@@ -273,7 +274,9 @@ def create_app(
         return list(await store.pareto_points(window=timedelta(minutes=window_minutes)))
 
     attach_calibrate_routes(app, get_calibration_store)
-    attach_auth_routes(app, get_auth_store, email_sender=email_sender)
+    attach_auth_routes(
+        app, get_auth_store, email_sender=email_sender, signup_disabled=signup_disabled
+    )
 
     return app
 

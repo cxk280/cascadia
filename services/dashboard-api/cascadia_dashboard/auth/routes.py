@@ -112,12 +112,24 @@ def attach_auth_routes(
     *,
     email_sender: EmailSender | None = None,
     dashboard_url: str | None = None,
+    signup_disabled: bool | None = None,
 ) -> None:
     router = APIRouter(prefix="/api/auth", tags=["auth"])
     sender = email_sender or email_sender_from_env()
     dash_url = dashboard_url or os.environ.get(
         "CASCADIA_DASHBOARD_URL", "http://localhost:3000"
     )
+    # Opt-in seal for instances you don't want strangers signing up on (e.g. a
+    # public demo deploy). Default OPEN so local/self-hosted onboarding is
+    # unchanged. The bootstrap account is ALWAYS allowed (see signup) so a fresh
+    # instance can never lock itself out — "disabled" means "no accounts beyond
+    # the first/admin".
+    if signup_disabled is None:
+        signup_disabled = os.environ.get("CASCADIA_SIGNUP_DISABLED", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
 
     @router.post("/signup", response_model=SignupAck, status_code=status.HTTP_201_CREATED)
     async def signup(req: SignupRequest) -> SignupAck:
@@ -128,7 +140,15 @@ def attach_auth_routes(
         # everyone after is an operator. Role is never taken from the request —
         # that would be a trivial privilege escalation. An admin promotes others
         # via /api/auth/role.
-        role = "admin" if await store.count_users() == 0 else "operator"
+        n_users = await store.count_users()
+        # Sealed instance: refuse new signups — but always let the bootstrap
+        # (first) account through so a fresh self-host can't lock itself out.
+        if signup_disabled and n_users > 0:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="signups are closed on this instance",
+            )
+        role = "admin" if n_users == 0 else "operator"
         try:
             await store.create_user(
                 user_id=user_id,

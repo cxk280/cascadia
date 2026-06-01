@@ -46,7 +46,9 @@ One command: brings up Postgres, writes a starter policy, builds and starts the 
 
 ## Accounts & email confirmation
 
-The operator dashboard is gated by email + password auth. Signup is **double opt-in**: it creates an unverified account and emails a one-time confirmation link — the account can't sign in until that link is clicked. The **first** confirmed account becomes **admin**; everyone else is an **operator**, and an admin can promote others to **reviewer** (calibration-only) or admin. Calibration is admin/reviewer-only — operators consume the calibrated judge, they don't label.
+The operator dashboard is gated by email + password auth. Signup is **double opt-in**: it creates an unverified account and emails a one-time confirmation link — the account can't sign in until that link is clicked. The **first** confirmed account becomes **admin** (per-instance — whoever signs up first against *this* deployment's database; nothing is hardcoded); everyone else is an **operator**, and an admin can promote others to **reviewer** (calibration-only) or admin. Calibration is admin/reviewer-only — operators consume the calibrated judge, they don't label.
+
+Running a public/shared instance? Set **`CASCADIA_SIGNUP_DISABLED=true`** to seal signups once your admin exists — the bootstrap (first) account is still allowed, so you can't lock yourself out, but no one else can join. (Pair it with a bearer token on `/v1/*` and provider spend caps — see [SECURITY.md](SECURITY.md#self-hosted-vs-maintainer-hosted-demo-deployments).)
 
 The confirmation email is sent over **SMTP** (works with Resend, SES, Postmark, Mailgun, Gmail, any SMTP host). **With no SMTP configured the link is logged instead of sent** (`grep "verification link" /tmp/cascadia-dashboard-api.log`) so local dev works offline. To send for real, set these on the dashboard-api:
 

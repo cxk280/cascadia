@@ -130,6 +130,16 @@ The operator dashboard is gated by email + password auth (added 2026-06-01; see 
 - **Roles:** `operator` / `admin` / `reviewer`, assigned server-side only (first account → admin; never taken from the request body). Middleware gates the calibration surface to admin/reviewer and confines reviewers to it. Validation is authoritative server-side and **fails closed** — an unreachable auth service denies access.
 - **Account enumeration — deliberate tradeoffs.** Login is generic (`invalid email or password`) and spends a dummy Argon2 verify on unknown emails to equalize timing. Signup (`409 email exists`), the login *not-verified* `403`, and the verify endpoint *do* reveal that an address is registered — unavoidable for a product that refuses silent duplicate accounts and must tell users to check their inbox; `resend-verification` stays generic to limit it.
 - **Transport:** the dashboard-api is server-to-server only (browser → Next.js route handlers → dashboard-api), same posture as the calibration write surface; the raw session/verification tokens never reach browser JS.
+- **Sealing signup (`CASCADIA_SIGNUP_DISABLED`).** Default is open — local/self-hosted onboarding is unchanged (first account → admin). Set `CASCADIA_SIGNUP_DISABLED=true` to refuse new signups (`403 signups are closed`) on an instance you don't want strangers joining. The **bootstrap (first) account is always allowed** even when sealed, so a fresh instance can't lock itself out of creating its admin. The bootstrap account is per-instance — whoever signs up first against *that* deployment's database — never a hardcoded identity.
+
+### Self-hosted vs. maintainer-hosted (demo) deployments
+
+Cascadia is meant to be **run locally or self-hosted with your own provider keys** (`npx cascadia` / docker compose). The maintainer-hosted instances exist only for demos and are **not** meant to carry third-party traffic. Operators of a public/shared instance should:
+
+- **Bearer-gate `/v1/*`** (`CASCADIA_PROXY_BEARER_TOKEN`) — without it the proxy is open and anyone can spend your provider budget. This is the single most important control on a reachable deployment.
+- **Set hard spend caps** at the provider (OpenAI/Anthropic/Groq) and on transactional email (Resend), or use deployment-scoped keys with low limits — the backstop if a token ever leaks.
+- **Seal signup** (`CASCADIA_SIGNUP_DISABLED=true`) once your admin account exists, so strangers can't create operator accounts or trigger confirmation emails.
+- Optionally scale the deployment to zero when idle — no surface, no cost.
 
 ### Unauthenticated read endpoints (information disclosure by design)
 
