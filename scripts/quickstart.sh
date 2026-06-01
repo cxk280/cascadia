@@ -22,8 +22,12 @@
 #   CASCADIA_MOCK_PORT      preferred mock-upstream port (default: 18091)
 #   CASCADIA_DASHBOARD_PORT preferred dashboard-api port (default: 18082)
 #   DASHBOARD_PORT          preferred dashboard UI port  (default: 3000)
+#   CASCADIA_PG_PORT        preferred Postgres host port (default: 5432)
 #   QUICKSTART_TRAFFIC      synthetic requests to drive  (default: 120; 0 = skip)
 #   CASCADIA_AUTH_DISABLED  set "true" to skip the dashboard login gate locally
+#   DASHBOARD_MODE          "prod" (default) precompiles all routes for instant
+#                           navigation; "dev" is the hot-reloading dev server
+#                           (routes compile lazily on first visit)
 
 set -euo pipefail
 
@@ -236,11 +240,22 @@ cd dashboard
 echo "[quickstart]       installing dashboard deps (npm install)..."
 npm install --silent
 
-cat <<EOF
+# The dashboard runs in production mode by default: `next build` precompiles
+# every route up front so navigation is instant (no on-demand "Compiling
+# /route..." lag once the stack is up). Set DASHBOARD_MODE=dev for the
+# hot-reloading dev server (routes compile lazily on first visit) when you're
+# actively editing the dashboard.
+DASHBOARD_MODE="${DASHBOARD_MODE:-prod}"
+export CASCADIA_DASHBOARD_API_BASE="http://127.0.0.1:$API_PORT"
+export CASCADIA_AUTH_DISABLED="${CASCADIA_AUTH_DISABLED:-}"
+
+# Printed right before the foreground server starts. $1 = mode description.
+print_ready() {
+  cat <<EOF
 
 [quickstart] [ok] Stack is up.
              Proxy        ->  http://localhost:$PROXY_PORT  (OpenAI-compatible at /v1)
-             Dashboard    ->  http://localhost:$DASH_PORT
+             Dashboard    ->  http://localhost:$DASH_PORT  ($1)
              dashboard-api logs -> /tmp/cascadia-dashboard-api.log
 
              The operator dashboard is gated by login. First visit redirects to
@@ -250,11 +265,17 @@ cat <<EOF
              Press Ctrl-C to stop the proxy, mock upstream, and dashboard-api.
 
 EOF
+}
 
-# Foreground - Ctrl-C here triggers the cleanup trap above. We invoke `next`
-# directly (not `npm run dev`, which hardcodes -p 3000) so the resolved
-# dashboard port takes effect, and point the UI + middleware at the resolved
-# dashboard-api port.
-CASCADIA_DASHBOARD_API_BASE="http://127.0.0.1:$API_PORT" \
-CASCADIA_AUTH_DISABLED="${CASCADIA_AUTH_DISABLED:-}" \
+# Run `next` directly (not `npm run dev`/`start`, which hardcode -p 3000) so the
+# resolved dashboard port takes effect. NOT exec'd, so the cleanup trap above
+# still fires on Ctrl-C.
+if [ "$DASHBOARD_MODE" = "dev" ]; then
+  print_ready "dev mode: hot-reload on, routes compile on first visit"
   ./node_modules/.bin/next dev -p "$DASH_PORT"
+else
+  echo "[quickstart]       precompiling dashboard routes (next build) for instant navigation..."
+  ./node_modules/.bin/next build
+  print_ready "precompiled production build"
+  ./node_modules/.bin/next start -p "$DASH_PORT"
+fi

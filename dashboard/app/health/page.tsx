@@ -36,7 +36,7 @@ export default async function HealthPage() {
   return (
     <Shell active="/health" headerSlot={<ProxyLivePipServer />}>
       <a
-        href="/"
+        href="/overview"
         className="text-xs text-fg-muted hover:text-fg inline-block mb-3"
       >
         ← Back to Overview

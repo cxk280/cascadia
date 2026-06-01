@@ -4,7 +4,7 @@ import { ProxyReachabilityBanner } from "./ProxyReachabilityBanner";
 import { UserMenu } from "./UserMenu";
 
 const NAV: Array<{ label: string; href: string; section: string }> = [
-  { section: "OPERATIONS", label: "Overview", href: "/" },
+  { section: "OPERATIONS", label: "Overview", href: "/overview" },
   { section: "OPERATIONS", label: "Pareto", href: "/pareto" },
   { section: "OPERATIONS", label: "Clusters", href: "/clusters" },
   { section: "OPERATIONS", label: "Recent activity", href: "/activity" },
