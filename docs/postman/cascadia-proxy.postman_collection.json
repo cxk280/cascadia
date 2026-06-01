@@ -1,0 +1,91 @@
+{
+  "info": {
+    "_postman_id": "c5d1a0e2-0000-4a00-9000-cascadiaproxy01",
+    "name": "Cascadia Proxy",
+    "description": "OpenAI-compatible requests against a Cascadia proxy.\n\nSetup (once):\n1. Import this collection AND the `cascadia-dev` environment file next to it.\n2. Select the `cascadia-dev` environment (top-right in Postman).\n3. Paste your proxy bearer token into the environment's `bearerToken` variable.\n   Get it from Railway: cascadia-proxy service -> Variables -> CASCADIA_PROXY_BEARER_TOKEN.\n4. Send 'Chat completion (cascade)'.\n\nThe `/policy` and `/config` requests are public (no auth) and are handy for confirming which cascade is live before sending paid traffic.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{bearerToken}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://cascadia-proxy-dev.up.railway.app",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Chat completion (cascade)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"model\": \"auto\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Explain the Pareto frontier in one clear paragraph.\" }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/chat/completions",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "chat", "completions"]
+        },
+        "description": "The core cascade call. `model: \"auto\"` lets Cascadia pick the cheap tier first and escalate to the expensive tier only when its confidence is below the cluster threshold. Uses the collection's bearer auth ({{bearerToken}}). The response carries an `x-cascadia-request-id` header you can correlate in the dashboard."
+      }
+    },
+    {
+      "name": "Chat completion (streaming, bypasses cascade)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"model\": \"auto\",\n  \"stream\": true,\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Stream a two-sentence summary of cascade routing.\" }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/chat/completions",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "chat", "completions"]
+        },
+        "description": "Streaming requests (stream:true) intentionally skip escalation by design - mid-loop escalation would diverge into incoherent state. Included so you can see the bypass behavior."
+      }
+    },
+    {
+      "name": "Get policy (public)",
+      "request": {
+        "method": "GET",
+        "auth": { "type": "noauth" },
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/policy",
+          "host": ["{{baseUrl}}"],
+          "path": ["policy"]
+        },
+        "description": "Public, no auth. Returns the live cluster table (models, thresholds, shadow rates). Use it to confirm which cascade is deployed before sending paid traffic."
+      }
+    },
+    {
+      "name": "Get config (public)",
+      "request": {
+        "method": "GET",
+        "auth": { "type": "noauth" },
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/config",
+          "host": ["{{baseUrl}}"],
+          "path": ["config"]
+        },
+        "description": "Public, no auth. Non-secret deployment config (data-residency posture, bearer-auth-enabled flag, policy version + cluster count)."
+      }
+    }
+  ]
+}
