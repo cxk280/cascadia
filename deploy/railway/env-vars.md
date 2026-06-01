@@ -32,7 +32,7 @@ Replace `<dashboard-url>` with the public Railway URL of the `dashboard` service
 | -------------------------------- | ------------------------------------------------ | ------------------------------------------- |
 | `CASCADIA_DASHBOARD_API_BASE`    | `http://dashboard-api.railway.internal:8080`     | Railway internal DNS                        |
 | `CASCADIA_CALIBRATE_USER`        | `cascadia`                                       | Option-B basic-auth user                    |
-| `CASCADIA_CALIBRATE_PASS`        | `QVTD7Uyc9PXuOixZB_5s`                           | Option-B basic-auth pass; **secret; rotate**|
+| `CASCADIA_CALIBRATE_PASS`        | _(set in Railway only — never commit)_           | Option-B basic-auth pass; **secret**; set via the Railway UI / CLI |
 
 **Do NOT** set `CASCADIA_DEMO_MODE`. The Option-A demo-mode toggle was abandoned in favor of the Next.js middleware basic-auth gate.
 
