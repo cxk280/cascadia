@@ -37,7 +37,6 @@ dashboard/tsconfig.tsbuildinfo
 /tmp/
 
 # Repo-level docs not needed inside images.
-DIFFERENTIATOR.md
 SOLID.md
 docs/
 deploy/helm/

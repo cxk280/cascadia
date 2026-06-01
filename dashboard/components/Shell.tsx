@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ProxyLivePip } from "./ProxyLivePip";
 import { ProxyReachabilityBanner } from "./ProxyReachabilityBanner";
+import { UserMenu } from "./UserMenu";
 
 const NAV: Array<{ label: string; href: string; section: string }> = [
   { section: "OPERATIONS", label: "Overview", href: "/" },
@@ -46,7 +47,10 @@ export function Shell({
           <span className="font-mono text-fg font-semibold tracking-tight">Cascadia</span>
           <span className="text-xs uppercase tracking-wider text-fg-muted">operator dashboard</span>
         </div>
-        {headerSlot ?? <ProxyLivePip />}
+        <div className="flex items-center gap-4">
+          {headerSlot ?? <ProxyLivePip />}
+          <UserMenu />
+        </div>
       </header>
       <div className="flex flex-col md:flex-row flex-1 min-h-0">
         {/* Desktop sidebar (md+). Hidden on mobile — a fixed 224px sidebar

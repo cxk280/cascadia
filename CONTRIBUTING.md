@@ -5,7 +5,7 @@ Cascadia is MIT-licensed and welcomes contributions. This file is the short vers
 ## Before you open a PR
 
 1. **Read [PLAN.md](PLAN.md) §9 (Decisions log).** The project has a strong opinion about *honest measurement* — quality numbers are calibrated against humans, biases are named not papered over. PRs that report cost-saved numbers without the corresponding quality calibration step won't land. See [docs/blog/methodology.md](docs/blog/methodology.md) for the framing.
-2. **Read [DIFFERENTIATOR.md](DIFFERENTIATOR.md).** Cascadia is the closed-loop quality-measurement layer, not the provider-plumbing layer. PRs that turn it into a LiteLLM/Portkey clone (retries, fallback chains, per-token cost tracking) will be redirected — those compose on top of Cascadia, they don't replace what it does.
+2. **Read the [README → "What makes Cascadia different"](README.md#what-makes-cascadia-different).** Cascadia is the closed-loop quality-measurement layer, not the provider-plumbing layer. PRs that turn it into a LiteLLM/Portkey clone (retries, fallback chains, per-token cost tracking) will be redirected — those compose on top of Cascadia, they don't replace what it does.
 3. **Open an issue first for non-trivial changes.** A 50-line refactor is fine to PR cold; a new phase of work or a contested architectural choice deserves a discussion thread first.
 
 ## Development setup

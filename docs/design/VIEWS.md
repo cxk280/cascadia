@@ -18,7 +18,7 @@ This list reflects what a *real* self-hostable LLM-gateway product needs to oper
 **Not in scope (deliberately omitted):**
 
 - Multi-tenant / team-workspace views — Cascadia is single-org self-hosted in v1. Revisit post-launch.
-- SSO / login / signup — self-hosted with a single admin in v1. Optional auth in v2.
+- ~~SSO / login / signup — self-hosted with a single admin in v1. Optional auth in v2.~~ **Superseded 2026-06-01** (PLAN.md §9): the operator dashboard now has first-class email + password auth (login #28 / signup #29 below). SSO / external IdP remains out of scope — auth is deliberately roll-our-own for a single-org self-hosted tool.
 - Blog index / individual posts — Markdown rendered by the static site generator; no bespoke mock needed.
 - Roadmap page — a section on the docs landing, not its own mock.
 - Network-offline / connectivity-lost — UI pattern (toast/banner), not a standalone view.
@@ -48,6 +48,13 @@ Mocks are built in order. Higher tiers tell the portfolio story; lower tiers com
 | 04  | Methodology page      | `views/methodology.md`        | 2    | spec v0 approved · **mock v0 complete**     | Eval methodology explainer: judges, calibration, agreement statistics. |
 | 05  | Benchmarks page       | `views/benchmarks.md`         | 3    | spec v0 approved · **mock v0 complete**     | Reproducible benchmark results with operating point on Pareto curve.   |
 | 06  | Comparison page       | `views/comparison.md`         | 3    | spec v0 approved · **mock v0 complete**     | "Cascadia vs LiteLLM / Portkey / RouteLLM" with methodology notes.     |
+
+### Authentication (pre-session, no auth)
+
+| #   | View                  | Slug                          | Tier | Status           | One-line                                                                |
+| --- | --------------------- | ----------------------------- | ---- | ---------------- | ----------------------------------------------------------------------- |
+| 28  | Login                 | `views/login.md`              | 1    | spec v0 · **mock v0 complete** | Email + password sign-in; centered card on the dark canvas, redirects back to the requested page. |
+| 29  | Signup                | `views/signup.md`             | 2    | spec v0 · **mock v0 complete** | Email + password account creation (display name optional, confirm-password); auto-signs-in on success. |
 
 ### Onboarding (post-install, pre-traffic)
 

@@ -18,6 +18,11 @@ from urllib.parse import urlparse
 from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+from cascadia_dashboard.auth import (
+    AsyncpgAuthStore,
+    AuthStore,
+    attach_auth_routes,
+)
 from cascadia_dashboard.calibrate import (
     AsyncpgCalibrationStore,
     CalibrationStore,
@@ -44,15 +49,17 @@ def _service_version() -> str:
 def create_app(
     store: Store | None = None,
     calibration_store: CalibrationStore | None = None,
+    auth_store: AuthStore | None = None,
 ) -> FastAPI:
-    """Factory. Pass `store` / `calibration_store` to inject fakes in tests;
-    in production we construct asyncpg-backed stores in the lifespan hook
-    from `CASCADIA_DATABASE_URL`.
+    """Factory. Pass `store` / `calibration_store` / `auth_store` to inject
+    fakes in tests; in production we construct asyncpg-backed stores in the
+    lifespan hook from `CASCADIA_DATABASE_URL`.
     """
 
     state: dict[str, object] = {
         "store": store,
         "calibration_store": calibration_store,
+        "auth_store": auth_store,
     }
 
     @asynccontextmanager
@@ -74,6 +81,10 @@ def create_app(
             if state["calibration_store"] is None:
                 state["calibration_store"] = AsyncpgCalibrationStore(asyncpg_store._pool)  # type: ignore[attr-defined]
                 owns_calibration_store = True
+            # Auth shares the same pool as the read/calibration stores. No
+            # separate ownership flag — it doesn't hold a pool of its own.
+            if state["auth_store"] is None:
+                state["auth_store"] = AsyncpgAuthStore(asyncpg_store._pool)  # type: ignore[attr-defined]
         try:
             yield
         finally:
@@ -119,6 +130,12 @@ def create_app(
         s = state["calibration_store"]
         if s is None:
             raise RuntimeError("calibration_store not initialised")
+        return s  # type: ignore[return-value]
+
+    def get_auth_store() -> AuthStore:
+        s = state["auth_store"]
+        if s is None:
+            raise RuntimeError("auth_store not initialised")
         return s  # type: ignore[return-value]
 
     @app.get("/api/health", response_model=HealthResponse)
@@ -255,6 +272,7 @@ def create_app(
         return list(await store.pareto_points(window=timedelta(minutes=window_minutes)))
 
     attach_calibrate_routes(app, get_calibration_store)
+    attach_auth_routes(app, get_auth_store)
 
     return app
 
