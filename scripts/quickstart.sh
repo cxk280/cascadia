@@ -388,6 +388,7 @@ echo "[quickstart] 5/5 - starting dashboard-api + dashboard..."
   CASCADIA_DATABASE_URL="$PG_URL" \
   CASCADIA_DASHBOARD_PORT="$API_PORT" \
   CASCADIA_PROXY_URL="http://127.0.0.1:$PROXY_PORT" \
+  CASCADIA_DASHBOARD_URL="${CASCADIA_DASHBOARD_URL:-http://localhost:$DASH_PORT}" \
     cascadia-dashboard-api
 ) >/tmp/cascadia-dashboard-api.log 2>&1 &
 API_PID=$!
@@ -417,9 +418,11 @@ print_ready() {
              Dashboard    ->  http://localhost:$DASH_PORT  ($1)
              dashboard-api logs -> /tmp/cascadia-dashboard-api.log
 
-             The operator dashboard is gated by login. First visit redirects to
-             /signup - the FIRST account becomes admin. (CASCADIA_AUTH_DISABLED=true
-             skips the gate locally.)
+             The operator dashboard is gated by login. First visit -> /signup;
+             the FIRST account becomes admin. Signup emails a confirmation link
+             you must click to finish. With no SMTP configured, that link is
+             printed to /tmp/cascadia-dashboard-api.log (grep "verification link").
+             (CASCADIA_AUTH_DISABLED=true skips the gate entirely.)
 
              Press Ctrl-C to stop the proxy, mock/judge/controller, and dashboard-api.
 

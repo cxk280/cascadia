@@ -78,9 +78,41 @@ export async function getSession(): Promise<SessionUser | null> {
 
 const UPSTREAM_TIMEOUT_MS = 8_000;
 
-// Shared body for the /login and /signup route handlers: forward the
-// credential POST to the dashboard-api, and on success mint the httpOnly
-// session cookie while stripping the raw token from the browser-facing body.
+// Plain pass-through for endpoints that DON'T issue a session (signup,
+// resend-verification): forward the POST and relay the dashboard-api's JSON +
+// status verbatim. No cookie is set — sign-up isn't complete until the emailed
+// link is used.
+export async function forwardJson(
+  req: NextRequest,
+  upstreamPath: string,
+): Promise<NextResponse> {
+  let body: string;
+  try {
+    body = await req.text();
+  } catch {
+    return NextResponse.json({ detail: "invalid request body" }, { status: 400 });
+  }
+  try {
+    const upstream = await fetch(`${SERVER_API_BASE}${upstreamPath}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body,
+      cache: "no-store",
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+    const data = await upstream.json().catch(() => ({}));
+    return NextResponse.json(data, { status: upstream.status });
+  } catch {
+    return NextResponse.json(
+      { detail: "authentication service unreachable" },
+      { status: 502 },
+    );
+  }
+}
+
+// Shared body for the /login and /verify route handlers: forward the POST to
+// the dashboard-api, and on success mint the httpOnly session cookie while
+// stripping the raw token from the browser-facing body.
 export async function forwardCredentialPost(
   req: NextRequest,
   upstreamPath: string,

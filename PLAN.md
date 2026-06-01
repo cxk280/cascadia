@@ -241,6 +241,15 @@ Originally scoped as a separate phase (PLAN.md §9 "open issues" 2026-05-19). Fo
 
 Newest first. Decisions are append-only; supersedes are noted by linking forward.
 
+### 2026-06-01 (later 2) — Email-verified signup (double opt-in)
+
+Signup now sends a real confirmation email and is not complete until the link is clicked. Chris's call: **block everyone, including the first/admin account** — no bootstrap exception.
+
+- **Flow.** `POST /api/auth/signup` creates an **unverified** account, issues **no session**, and emails a one-time link (`/verify?token=…`). `POST /api/auth/verify` consumes the token (single-use, 24h, only the SHA-256 stored — same posture as sessions), flips `email_verified`, and *then* issues the session. `POST /api/auth/resend-verification` re-sends (generic ack — no enumeration). Login `403`s an unverified account. Migration `0010` adds `auth_users.email_verified` + `auth_email_verifications`.
+- **Delivery = SMTP**, built from `CASCADIA_SMTP_*` (`smtplib` in a worker thread). With no SMTP configured, a dev `LogEmailSender` prints the link to the dashboard-api log so the flow works fully offline — quickstart surfaces this (`grep "verification link" /tmp/cascadia-dashboard-api.log`). The verify-link base is `CASCADIA_DASHBOARD_URL` (quickstart sets it to the resolved dashboard port).
+- **Next.js.** Signup no longer sets a cookie — it shows a "check your email" panel with resend; `/verify` (public) consumes the token and logs you in; login surfaces "verify your email" + resend. Verification tokens are single-use, so `VerifyClient` guards against a double-POST on React strict-mode re-render.
+- **Demo impact.** For the standalone live video you'll either configure SMTP or grab the link from the log once to confirm the bootstrap admin (chris@cking.me was dropped from the local DB so it re-signs-up clean through the new flow). Tests: dashboard-api **78** (signup/verify/resend/role flow reworked around a fake email sender); consume-CTE verified on real PG 16 (unverified→verified, single-use, role carried).
+
 ### 2026-06-01 (later) — Live data demo: multi-provider judge panel, roles, baked-in calibration, standalone-then-LiteLLM
 
 Building toward a demo video on live data. Chris's sequencing: first a **standalone** live demo (Cascadia alone, no other apps), then a LiteLLM-stacked one later. Several decisions landed together:

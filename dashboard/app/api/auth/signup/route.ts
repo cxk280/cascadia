@@ -1,11 +1,12 @@
-// Signup: forward {email, password, display_name?} to the dashboard-api and,
-// on success (201), set the httpOnly session cookie so the new account is
-// logged in immediately. Same token-stripping discipline as /login.
+// Signup: forward {email, password, display_name?} to the dashboard-api. This
+// does NOT log the user in — signup is double-opt-in. The dashboard-api creates
+// an unverified account and emails a confirmation link; the response carries no
+// token, so no cookie is set. The user completes signup via /verify.
 
 import { NextRequest } from "next/server";
 
-import { forwardCredentialPost } from "@/lib/auth";
+import { forwardJson } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
-  return forwardCredentialPost(req, "/api/auth/signup", 201);
+  return forwardJson(req, "/api/auth/signup");
 }

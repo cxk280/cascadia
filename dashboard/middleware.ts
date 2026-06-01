@@ -34,7 +34,9 @@ const API_BASE =
 const VALIDATE_TIMEOUT_MS = 4_000;
 
 function isPublicPath(pathname: string): boolean {
-  if (pathname === "/login" || pathname === "/signup") return true;
+  if (pathname === "/login" || pathname === "/signup" || pathname === "/verify") {
+    return true;
+  }
   if (pathname === "/api/auth" || pathname.startsWith("/api/auth/")) return true;
   if (pathname === "/api/healthz") return true;
   if (pathname === "/calibrate/rubric" || pathname === "/api/calibrate/rubric") {

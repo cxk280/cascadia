@@ -28,6 +28,16 @@ function formatError(detail: unknown): string {
 
 const PASSWORD_MIN = 8;
 
+// Best-effort resend; always shows the same neutral confirmation (the server
+// won't reveal whether the account exists).
+async function resendVerification(email: string): Promise<void> {
+  await fetch("/api/auth/resend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: email.trim() }),
+  }).catch(() => {});
+}
+
 export function AuthForm({ mode }: { mode: Mode }) {
   const router = useRouter();
   const next = safeNext(useSearchParams().get("next"));
@@ -38,14 +48,20 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set after a successful signup → render the "check your email" panel.
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  // Set when login is refused because the email isn't verified → offer resend.
+  const [needsVerify, setNeedsVerify] = useState(false);
+  const [resendMsg, setResendMsg] = useState<string | null>(null);
 
   const isSignup = mode === "signup";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setNeedsVerify(false);
+    setResendMsg(null);
 
-    // Client-side guards keep the common mistakes from round-tripping.
     if (isSignup) {
       if (password.length < PASSWORD_MIN) {
         setError(`Password must be at least ${PASSWORD_MIN} characters.`);
@@ -68,20 +84,70 @@ export function AuthForm({ mode }: { mode: Mode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) {
+
+      if (isSignup) {
+        if (res.ok) {
+          // No session yet — signup is double opt-in. Show the check-email panel.
+          setSentTo(email.trim());
+          setBusy(false);
+          return;
+        }
         const data = await res.json().catch(() => ({}));
         setError(formatError((data as { detail?: unknown }).detail));
         setBusy(false);
         return;
       }
-      // Cookie is set by the route handler. Navigate to the intended page and
-      // refresh so server components re-render with the new session.
-      router.push(next);
-      router.refresh();
+
+      // login
+      if (res.ok) {
+        router.push(next);
+        router.refresh();
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 403) {
+        // Account exists but email isn't verified.
+        setError("Your email isn't verified yet — check your inbox for the confirmation link.");
+        setNeedsVerify(true);
+      } else {
+        setError(formatError((data as { detail?: unknown }).detail));
+      }
+      setBusy(false);
     } catch {
       setError("Couldn't reach the server. Please try again.");
       setBusy(false);
     }
+  }
+
+  // Post-signup: confirmation-sent panel.
+  if (sentTo) {
+    return (
+      <div className="space-y-4">
+        <div className="border border-accent/30 bg-accent/5 text-sm rounded-md px-3 py-3">
+          <div className="font-medium text-fg">Check your email</div>
+          <p className="text-fg-muted mt-1">
+            We sent a confirmation link to <span className="text-fg">{sentTo}</span>.
+            Click it to finish creating your account — it expires in 24 hours.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={async () => {
+            await resendVerification(sentTo);
+            setResendMsg("If that account still needs confirming, we've re-sent the link.");
+          }}
+          className="w-full border border-border rounded px-4 py-2 text-sm text-fg-muted hover:text-fg hover:bg-bg-raised"
+        >
+          Resend confirmation email
+        </button>
+        {resendMsg && <div className="text-xs text-fg-muted text-center">{resendMsg}</div>}
+        <div className="text-xs text-fg-muted text-center pt-2">
+          <Link href="/login" className="text-accent hover:underline">
+            Back to sign in
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -164,8 +230,21 @@ export function AuthForm({ mode }: { mode: Mode }) {
           className="border border-accent-danger/40 bg-accent-danger/5 text-accent-danger text-sm rounded-md px-3 py-2"
         >
           {error}
+          {needsVerify && (
+            <button
+              type="button"
+              onClick={async () => {
+                await resendVerification(email);
+                setResendMsg("If that account still needs confirming, we've re-sent the link.");
+              }}
+              className="mt-2 block underline hover:no-underline"
+            >
+              Resend confirmation email
+            </button>
+          )}
         </div>
       )}
+      {resendMsg && <div className="text-xs text-fg-muted">{resendMsg}</div>}
 
       <button
         type="submit"
