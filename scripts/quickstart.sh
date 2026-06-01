@@ -1,33 +1,36 @@
 #!/usr/bin/env bash
 # Cascadia local-dev quick start - one command to bring up the whole stack.
 #
-# Brings up Postgres, writes a starter policy, builds + starts the mock
-# upstream and the proxy, drives synthetic traffic to populate the Pareto
-# data, starts the dashboard-api, and runs the dashboard dev server in the
-# foreground. Ctrl-C tears the background processes down.
+# Two modes:
+#   * default (mock)  - mock upstream + synthetic Pareto seed. No keys, no cost,
+#                       fully offline. Fastest loop for hacking on the proxy.
+#   * CASCADIA_LIVE=1 - LIVE data, standalone: the proxy talks to REAL providers
+#                       (Anthropic cascade by default), real traffic generates
+#                       real shadow pairs, a real multi-model judge panel scores
+#                       them, and the controller refits live. This spends real
+#                       API budget. Needs ANTHROPIC_API_KEY (cascade) +
+#                       OPENAI_API_KEY (cross-family judge panel).
 #
-#   ./scripts/quickstart.sh
+#   ./scripts/quickstart.sh                 # mock
+#   CASCADIA_LIVE=1 ./scripts/quickstart.sh # live, standalone
 #
-# This is the fastest loop for hacking on the proxy itself (cargo build +
-# Postgres in Docker). To run the entire stack as containers instead, use
-# `deploy/compose/docker-compose.full.yml`. To deploy, see deploy/helm or the
-# Railway walkthrough in PLAN.md section 9 (2026-05-20).
-#
-# Every port has a preferred value and falls back to the next free port if
-# that one is already taken (so it won't collide with another dev server).
-# Override the preferred values via the environment:
+# Every port has a preferred value and falls back to the next free port if it's
+# taken. Override via the environment:
 #   CASCADIA_DATABASE_URL   Postgres DSN (default: local docker-compose)
-#   CASCADIA_POLICY_FILE    starter policy path (default: /tmp/cascadia-policy.json)
+#   CASCADIA_POLICY_FILE    policy path (default: /tmp/cascadia-policy.json)
 #   CASCADIA_LISTEN_PORT    preferred proxy port         (default: 8080)
 #   CASCADIA_MOCK_PORT      preferred mock-upstream port (default: 18091)
 #   CASCADIA_DASHBOARD_PORT preferred dashboard-api port (default: 18082)
 #   DASHBOARD_PORT          preferred dashboard UI port  (default: 3000)
 #   CASCADIA_PG_PORT        preferred Postgres host port (default: 5432)
-#   QUICKSTART_TRAFFIC      synthetic requests to drive  (default: 120; 0 = skip)
+#   QUICKSTART_TRAFFIC      requests to drive            (default: 120; 0 = skip)
 #   CASCADIA_AUTH_DISABLED  set "true" to skip the dashboard login gate locally
-#   DASHBOARD_MODE          "prod" (default) precompiles all routes for instant
-#                           navigation; "dev" is the hot-reloading dev server
-#                           (routes compile lazily on first visit)
+#   DASHBOARD_MODE          "prod" (default, precompiled) | "dev" (hot-reload)
+# Live-mode only:
+#   CASCADIA_CHEAP_MODEL      default anthropic/claude-haiku-4-5
+#   CASCADIA_EXPENSIVE_MODEL  default anthropic/claude-sonnet-4-6
+#   CASCADIA_JUDGE_PANEL      default from services/judge-worker/calibration/judge_ensemble.json
+#   CASCADIA_LIVE_SHADOW_RATE default 0.5 (fraction mirrored to expensive for judging)
 
 set -euo pipefail
 
@@ -37,6 +40,61 @@ cd "$REPO"
 POLICY_FILE="${CASCADIA_POLICY_FILE:-/tmp/cascadia-policy.json}"
 TRAFFIC="${QUICKSTART_TRAFFIC:-120}"
 COMPOSE="deploy/compose/docker-compose.yml"
+LIVE="${CASCADIA_LIVE:-}"
+
+# --- live-mode config + key checks (fail fast before docker/build) ----------
+CHEAP_MODEL="${CASCADIA_CHEAP_MODEL:-anthropic/claude-haiku-4-5}"
+EXPENSIVE_MODEL="${CASCADIA_EXPENSIVE_MODEL:-anthropic/claude-sonnet-4-6}"
+LIVE_SHADOW_RATE="${CASCADIA_LIVE_SHADOW_RATE:-0.5}"
+# Judge panel: env override, else the baked-in calibration config, else a
+# sensible default. The poller reads $CASCADIA_JUDGE_PANEL.
+JUDGE_PANEL="${CASCADIA_JUDGE_PANEL:-$(python3 -c 'import json,sys; print(",".join(json.load(open("services/judge-worker/calibration/judge_ensemble.json"))["default_panel"]))' 2>/dev/null || echo "openai:gpt-4o-mini")}"
+
+_key_env_for() {
+  case "$1" in
+    openai) echo OPENAI_API_KEY ;;
+    groq) echo GROQ_API_KEY ;;
+    xai) echo XAI_API_KEY ;;
+    anthropic) echo ANTHROPIC_API_KEY ;;
+    *) echo "" ;;
+  esac
+}
+
+# Portable indirect read: value of the env var whose NAME is $1, or empty.
+# (Avoids `${!name:-}`, which isn't reliable on macOS bash 3.2.)
+_indirect() { eval "printf '%s' \"\${$1:-}\""; }
+
+if [ -n "$LIVE" ]; then
+  echo "[quickstart] LIVE mode: real providers, real shadow pairs, real judge panel (real \$\$)."
+  # Cascade key: the default cascade is Anthropic; derive the needed key from
+  # the cheap-model prefix so a custom CASCADIA_CHEAP_MODEL still checks right.
+  cascade_provider="${CHEAP_MODEL%%/*}"
+  cascade_key_env="$(_key_env_for "$cascade_provider")"
+  if [ -z "$cascade_key_env" ]; then
+    echo "[quickstart] ERROR: unknown cascade provider '$cascade_provider' in CASCADIA_CHEAP_MODEL" >&2
+    exit 1
+  fi
+  if [ -z "$(_indirect "$cascade_key_env")" ]; then
+    echo "[quickstart] ERROR: $cascade_key_env must be set for the $cascade_provider cascade (CASCADIA_LIVE)." >&2
+    exit 1
+  fi
+  # Judge keys: every provider named in the panel needs its key.
+  for member in ${JUDGE_PANEL//,/ }; do
+    jp="${member%%:*}"
+    jenv="$(_key_env_for "$jp")"
+    if [ -z "$jenv" ]; then
+      echo "[quickstart] ERROR: unknown judge provider '$jp' in CASCADIA_JUDGE_PANEL" >&2
+      exit 1
+    fi
+    if [ -z "$(_indirect "$jenv")" ]; then
+      echo "[quickstart] ERROR: $jenv must be set for judge panel member '$member' (CASCADIA_LIVE)." >&2
+      exit 1
+    fi
+    if [ "$jp" = "$cascade_provider" ]; then
+      echo "[quickstart] WARNING: judge provider '$jp' matches the cascade provider; the anti-self-preference filter will discount those verdicts. Use a different family." >&2
+    fi
+  done
+fi
 
 # --- port helpers -----------------------------------------------------------
 # port_in_use PORT -> exit 0 if something is LISTENing on it.
@@ -105,9 +163,9 @@ choose_db_port() {
 # Resolve the Postgres host port + DSN. The container always listens on 5432
 # internally; CASCADIA_PG_HOST_PORT (read by docker-compose.yml) controls the
 # host-side publish so a foreign Postgres on :5432 won't block us. We export
-# CASCADIA_DATABASE_URL so the proxy, dashboard-api, and the pareto-frontier
-# traffic driver all share the resolved DSN. Use 127.0.0.1 (not localhost) to
-# force IPv4 onto the published port.
+# CASCADIA_DATABASE_URL so the proxy, dashboard-api, judge poller, and
+# controller all share the resolved DSN. Use 127.0.0.1 (not localhost) to force
+# IPv4 onto the published port.
 DB_PORT="$(choose_db_port "${CASCADIA_PG_PORT:-5432}")"
 export CASCADIA_PG_HOST_PORT="$DB_PORT"
 if [ -n "${CASCADIA_DATABASE_URL:-}" ]; then
@@ -122,13 +180,13 @@ MOCK_PORT="$(pick_port mock-upstream "${CASCADIA_MOCK_PORT:-18091}")"
 API_PORT="$(pick_port dashboard-api  "${CASCADIA_DASHBOARD_PORT:-18082}")"
 DASH_PORT="$(pick_port dashboard     "${DASHBOARD_PORT:-3000}")"
 
-MOCK_PID="" ; PROXY_PID="" ; API_PID=""
+MOCK_PID="" ; PROXY_PID="" ; API_PID="" ; JUDGE_PID="" ; CTRL_PID=""
 cleanup() {
   echo
   echo "[quickstart] shutting down background processes..."
-  [ -n "$API_PID" ]   && kill "$API_PID"   2>/dev/null || true
-  [ -n "$PROXY_PID" ] && kill "$PROXY_PID" 2>/dev/null || true
-  [ -n "$MOCK_PID" ]  && kill "$MOCK_PID"  2>/dev/null || true
+  for pid in "$API_PID" "$CTRL_PID" "$JUDGE_PID" "$PROXY_PID" "$MOCK_PID"; do
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+  done
   echo "[quickstart] Postgres is left running. Tear it down with:"
   echo "             docker compose -f $COMPOSE down -v"
 }
@@ -147,10 +205,26 @@ for _ in $(seq 1 60); do
   sleep 0.5
 done
 
-# Step 2 writes a starter policy file (the knob semantics are echoed to the
-# terminal below so they show at runtime). See "## Tuning for cost" in the
-# README for the full table.
-if [ ! -f "$POLICY_FILE" ]; then
+# --- step 2: policy ---------------------------------------------------------
+if [ -n "$LIVE" ]; then
+  echo "[quickstart] 2/5 - writing LIVE policy -> $POLICY_FILE"
+  echo "[quickstart]       cascade: $CHEAP_MODEL  ->  $EXPENSIVE_MODEL  (shadow_rate=$LIVE_SHADOW_RATE)"
+  echo "[quickstart]       judge panel: $JUDGE_PANEL"
+  cat > "$POLICY_FILE" <<EOF
+{
+  "default_cluster": "default",
+  "cluster_buckets": 4,
+  "clusters": {
+    "default": {
+      "cheap_model": "$CHEAP_MODEL",
+      "expensive_model": "$EXPENSIVE_MODEL",
+      "threshold": 0.7,
+      "shadow_rate": $LIVE_SHADOW_RATE
+    }
+  }
+}
+EOF
+elif [ ! -f "$POLICY_FILE" ]; then
   echo "[quickstart] 2/5 - writing starter policy -> $POLICY_FILE"
   echo "[quickstart]       model strings need a provider/ prefix (e.g. openai/...);"
   echo "[quickstart]       unprefixed values hard-fail at boot, by design."
@@ -179,26 +253,49 @@ else
   echo "[quickstart] 2/5 - reusing existing policy at $POLICY_FILE"
 fi
 
+# --- step 3: build + proxy (+ mock in mock mode) ----------------------------
 echo "[quickstart] 3/5 - building proxy + mock upstream (cargo build --release)..."
 cargo build --release
 
-# At least one provider key (OPENAI/ANTHROPIC/GROQ/XAI) must be set. The mock
-# upstream accepts any non-empty value, so `mock` is fine for local dev.
-CASCADIA_MOCK_LISTEN_ADDR="127.0.0.1:$MOCK_PORT" \
-  "$REPO/target/release/cascadia-mock-upstream" >/tmp/cascadia-mock.log 2>&1 &
-MOCK_PID=$!
-echo "[quickstart]       mock upstream started on :$MOCK_PORT (pid $MOCK_PID, log /tmp/cascadia-mock.log)"
-
-# NOTE: the proxy reads CASCADIA_LISTEN_ADDR (host:port), not a bare port.
-CASCADIA_OPENAI_API_KEY=mock \
-CASCADIA_OPENAI_BASE_URL="http://127.0.0.1:$MOCK_PORT" \
-CASCADIA_DATABASE_URL="$PG_URL" \
-CASCADIA_POLICY_FILE="$POLICY_FILE" \
-CASCADIA_CLUSTER_BUCKETS=4 \
-CASCADIA_LISTEN_ADDR="127.0.0.1:$PROXY_PORT" \
-  "$REPO/target/release/cascadia-proxy" >/tmp/cascadia-proxy.log 2>&1 &
-PROXY_PID=$!
-echo "[quickstart]       proxy starting on :$PROXY_PORT (pid $PROXY_PID, log /tmp/cascadia-proxy.log)"
+if [ -n "$LIVE" ]; then
+  # Live: proxy talks to the REAL provider. Anthropic cascade by default; the
+  # provider key comes from the same env the cascade-key check validated above.
+  cascade_provider="${CHEAP_MODEL%%/*}"
+  cascade_key_env="$(_key_env_for "$cascade_provider")"
+  proxy_env=(
+    "CASCADIA_DATABASE_URL=$PG_URL"
+    "CASCADIA_POLICY_FILE=$POLICY_FILE"
+    "CASCADIA_CLUSTER_BUCKETS=4"
+    "CASCADIA_LISTEN_ADDR=127.0.0.1:$PROXY_PORT"
+  )
+  cascade_key_val="$(_indirect "$cascade_key_env")"
+  case "$cascade_provider" in
+    anthropic) proxy_env+=("CASCADIA_ANTHROPIC_API_KEY=$cascade_key_val") ;;
+    openai)    proxy_env+=("CASCADIA_OPENAI_API_KEY=$cascade_key_val") ;;
+    groq)      proxy_env+=("CASCADIA_GROQ_API_KEY=$cascade_key_val") ;;
+    xai)       proxy_env+=("CASCADIA_XAI_API_KEY=$cascade_key_val") ;;
+  esac
+  env "${proxy_env[@]}" \
+    "$REPO/target/release/cascadia-proxy" >/tmp/cascadia-proxy.log 2>&1 &
+  PROXY_PID=$!
+  echo "[quickstart]       LIVE proxy starting on :$PROXY_PORT -> $cascade_provider (pid $PROXY_PID, log /tmp/cascadia-proxy.log)"
+else
+  # Mock: at least one provider key must be set; the mock accepts any value.
+  CASCADIA_MOCK_LISTEN_ADDR="127.0.0.1:$MOCK_PORT" \
+    "$REPO/target/release/cascadia-mock-upstream" >/tmp/cascadia-mock.log 2>&1 &
+  MOCK_PID=$!
+  echo "[quickstart]       mock upstream started on :$MOCK_PORT (pid $MOCK_PID, log /tmp/cascadia-mock.log)"
+  # NOTE: the proxy reads CASCADIA_LISTEN_ADDR (host:port), not a bare port.
+  CASCADIA_OPENAI_API_KEY=mock \
+  CASCADIA_OPENAI_BASE_URL="http://127.0.0.1:$MOCK_PORT" \
+  CASCADIA_DATABASE_URL="$PG_URL" \
+  CASCADIA_POLICY_FILE="$POLICY_FILE" \
+  CASCADIA_CLUSTER_BUCKETS=4 \
+  CASCADIA_LISTEN_ADDR="127.0.0.1:$PROXY_PORT" \
+    "$REPO/target/release/cascadia-proxy" >/tmp/cascadia-proxy.log 2>&1 &
+  PROXY_PID=$!
+  echo "[quickstart]       proxy starting on :$PROXY_PORT (pid $PROXY_PID, log /tmp/cascadia-proxy.log)"
+fi
 
 echo "[quickstart]       waiting for proxy /readyz on :$PROXY_PORT..."
 for _ in $(seq 1 60); do
@@ -209,16 +306,65 @@ for _ in $(seq 1 60); do
   sleep 0.5
 done
 
-# Step 4 uses the self-contained pareto-frontier harness to seed Pareto data.
-# It runs its OWN ephemeral proxy+mock (ports 18080/18081) and tears them down
-# on exit, so it must not collide with our long-lived stack above - which is
-# why our mock defaults to 18091, not 18081.
-if [ "$TRAFFIC" != "0" ]; then
+# --- step 4: traffic --------------------------------------------------------
+if [ -n "$LIVE" ]; then
+  if [ "$TRAFFIC" != "0" ]; then
+    echo "[quickstart] 4/5 - driving $TRAFFIC REAL requests through the cascade (real API cost)..."
+    CATS=("Explain in one paragraph:" "Write a short function that" \
+          "What is the capital of" "Give me a careful, detailed answer about")
+    for i in $(seq 1 "$TRAFFIC"); do
+      cat="${CATS[$(( i % 4 ))]}"
+      curl -s "http://127.0.0.1:$PROXY_PORT/v1/chat/completions" \
+        -H 'Content-Type: application/json' \
+        -d "{\"model\":\"auto\",\"messages\":[{\"role\":\"user\",\"content\":\"${cat} topic ${i}?\"}]}" \
+        >/dev/null || true
+    done
+    echo "[quickstart]       traffic done; shadow pairs are queued for the judge panel."
+  else
+    echo "[quickstart] 4/5 - skipping traffic (QUICKSTART_TRAFFIC=0); send your own to populate the dashboard."
+  fi
+elif [ "$TRAFFIC" != "0" ]; then
+  # Mock: the self-contained pareto-frontier harness seeds synthetic data. It
+  # runs its OWN ephemeral proxy+mock (18080/18081), which is why our mock
+  # defaults to 18091.
   echo "[quickstart] 4/5 - driving $TRAFFIC synthetic requests to populate Pareto data..."
   bench/scripts/pareto-frontier.sh "$TRAFFIC" || \
     echo "[quickstart]       (traffic driver returned non-zero; continuing)"
 else
   echo "[quickstart] 4/5 - skipping synthetic traffic (QUICKSTART_TRAFFIC=0)"
+fi
+
+# --- step 4.5 (live only): real judge panel + controller, running live ------
+if [ -n "$LIVE" ]; then
+  if [ -d services/judge-worker/.venv ]; then
+    echo "[quickstart]       starting judge panel poller ($JUDGE_PANEL)..."
+    (
+      cd services/judge-worker
+      # shellcheck disable=SC1091
+      . .venv/bin/activate
+      CASCADIA_DATABASE_URL="$PG_URL" CASCADIA_JUDGE_PANEL="$JUDGE_PANEL" \
+        cascadia-judge-poll --batch-size 4
+    ) >/tmp/cascadia-judge.log 2>&1 &
+    JUDGE_PID=$!
+    echo "[quickstart]       judge poller pid $JUDGE_PID (log /tmp/cascadia-judge.log)"
+  else
+    echo "[quickstart]       WARNING: services/judge-worker/.venv missing; skipping live judging (run 'uv sync' there)." >&2
+  fi
+  if [ -d services/policy-controller/.venv ]; then
+    echo "[quickstart]       starting policy controller (refit loop)..."
+    (
+      cd services/policy-controller
+      # shellcheck disable=SC1091
+      . .venv/bin/activate
+      CASCADIA_DATABASE_URL="$PG_URL" CASCADIA_POLICY_FILE="$POLICY_FILE" \
+        cascadia-policy-controller --interval-seconds 30 --min-sample-size 5 \
+          --lookback-minutes 1440
+    ) >/tmp/cascadia-controller.log 2>&1 &
+    CTRL_PID=$!
+    echo "[quickstart]       controller pid $CTRL_PID (log /tmp/cascadia-controller.log)"
+  else
+    echo "[quickstart]       WARNING: services/policy-controller/.venv missing; skipping live refit (run 'uv sync' there)." >&2
+  fi
 fi
 
 echo "[quickstart] 5/5 - starting dashboard-api + dashboard..."
@@ -251,18 +397,20 @@ export CASCADIA_AUTH_DISABLED="${CASCADIA_AUTH_DISABLED:-}"
 
 # Printed right before the foreground server starts. $1 = mode description.
 print_ready() {
+  _data="mock data (synthetic seed)"
+  [ -n "$LIVE" ] && _data="LIVE data ($CHEAP_MODEL -> $EXPENSIVE_MODEL; judge panel $JUDGE_PANEL)"
   cat <<EOF
 
-[quickstart] [ok] Stack is up.
+[quickstart] [ok] Stack is up - $_data
              Proxy        ->  http://localhost:$PROXY_PORT  (OpenAI-compatible at /v1)
              Dashboard    ->  http://localhost:$DASH_PORT  ($1)
              dashboard-api logs -> /tmp/cascadia-dashboard-api.log
 
              The operator dashboard is gated by login. First visit redirects to
-             /signup - create an email + password account, then you're in.
-             (Set CASCADIA_AUTH_DISABLED=true to skip the gate locally.)
+             /signup - the FIRST account becomes admin. (CASCADIA_AUTH_DISABLED=true
+             skips the gate locally.)
 
-             Press Ctrl-C to stop the proxy, mock upstream, and dashboard-api.
+             Press Ctrl-C to stop the proxy, mock/judge/controller, and dashboard-api.
 
 EOF
 }
