@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Verify the OpenAI adapter refuses to dial non-OpenAI hosts (Anthropic,
-# Gemini, AWS Bedrock) — Phase 7 footgun protection. End-to-end test that
+# Gemini, AWS Bedrock) - Phase 7 footgun protection. End-to-end test that
 # does not require any real provider key. Uses curl --retry-connrefused to
 # avoid sleep-based race conditions.
 

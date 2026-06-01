@@ -6,18 +6,23 @@
 # data, starts the dashboard-api, and runs the dashboard dev server in the
 # foreground. Ctrl-C tears the background processes down.
 #
-#   $ ./scripts/quickstart.sh
+#   ./scripts/quickstart.sh
 #
 # This is the fastest loop for hacking on the proxy itself (cargo build +
 # Postgres in Docker). To run the entire stack as containers instead, use
 # `deploy/compose/docker-compose.full.yml`. To deploy, see deploy/helm or the
 # Railway walkthrough in PLAN.md section 9 (2026-05-20).
 #
-# Override any of these via the environment:
+# Every port has a preferred value and falls back to the next free port if
+# that one is already taken (so it won't collide with another dev server).
+# Override the preferred values via the environment:
 #   CASCADIA_DATABASE_URL   Postgres DSN (default: local docker-compose)
 #   CASCADIA_POLICY_FILE    starter policy path (default: /tmp/cascadia-policy.json)
-#   CASCADIA_LISTEN_PORT    proxy port (default: 8080)
-#   QUICKSTART_TRAFFIC      synthetic requests to drive (default: 120; 0 = skip)
+#   CASCADIA_LISTEN_PORT    preferred proxy port         (default: 8080)
+#   CASCADIA_MOCK_PORT      preferred mock-upstream port (default: 18091)
+#   CASCADIA_DASHBOARD_PORT preferred dashboard-api port (default: 18082)
+#   DASHBOARD_PORT          preferred dashboard UI port  (default: 3000)
+#   QUICKSTART_TRAFFIC      synthetic requests to drive  (default: 120; 0 = skip)
 #   CASCADIA_AUTH_DISABLED  set "true" to skip the dashboard login gate locally
 
 set -euo pipefail
@@ -27,9 +32,48 @@ cd "$REPO"
 
 PG_URL="${CASCADIA_DATABASE_URL:-postgres://cascadia:cascadia@localhost:5432/cascadia}"
 POLICY_FILE="${CASCADIA_POLICY_FILE:-/tmp/cascadia-policy.json}"
-PROXY_PORT="${CASCADIA_LISTEN_PORT:-8080}"
 TRAFFIC="${QUICKSTART_TRAFFIC:-120}"
 COMPOSE="deploy/compose/docker-compose.yml"
+
+# --- port helpers -----------------------------------------------------------
+# port_in_use PORT -> exit 0 if something is LISTENing on it.
+port_in_use() {
+  _p="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$_p" -sTCP:LISTEN >/dev/null 2>&1
+    return
+  fi
+  # Fallback when lsof is absent: probe both loopback families via bash
+  # /dev/tcp (a connect that succeeds means something is listening).
+  ( exec 3<>"/dev/tcp/127.0.0.1/$_p" ) 2>/dev/null && return 0
+  ( exec 3<>"/dev/tcp/::1/$_p" )       2>/dev/null && return 0
+  return 1
+}
+
+# pick_port LABEL PREFERRED -> echoes the preferred port, or the next free one
+# above it if the preferred is taken. Progress goes to stderr so command
+# substitution captures only the chosen port.
+pick_port() {
+  _label="$1"; _pref="$2"; _p="$_pref"; _tries=0
+  while port_in_use "$_p"; do
+    _tries=$((_tries + 1))
+    if [ "$_tries" -gt 20 ]; then
+      echo "[quickstart] ERROR: no free port for $_label near $_pref (tried 20)" >&2
+      exit 1
+    fi
+    _next=$((_p + 1))
+    echo "[quickstart]       $_label: port $_p is busy -> trying $_next" >&2
+    _p="$_next"
+  done
+  [ "$_p" != "$_pref" ] && \
+    echo "[quickstart]       $_label: preferred $_pref busy, using fallback $_p" >&2
+  printf '%s\n' "$_p"
+}
+
+PROXY_PORT="$(pick_port proxy        "${CASCADIA_LISTEN_PORT:-8080}")"
+MOCK_PORT="$(pick_port mock-upstream "${CASCADIA_MOCK_PORT:-18091}")"
+API_PORT="$(pick_port dashboard-api  "${CASCADIA_DASHBOARD_PORT:-18082}")"
+DASH_PORT="$(pick_port dashboard     "${DASHBOARD_PORT:-3000}")"
 
 MOCK_PID="" ; PROXY_PID="" ; API_PID=""
 cleanup() {
@@ -43,6 +87,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+echo "[quickstart] ports: proxy=$PROXY_PORT mock=$MOCK_PORT dashboard-api=$API_PORT dashboard=$DASH_PORT"
 echo "[quickstart] 1/5 - bringing up Postgres..."
 docker compose -f "$COMPOSE" up -d
 
@@ -83,19 +128,21 @@ cargo build --release
 
 # At least one provider key (OPENAI/ANTHROPIC/GROQ/XAI) must be set. The mock
 # upstream accepts any non-empty value, so `mock` is fine for local dev.
-"$REPO/target/release/cascadia-mock-upstream" >/tmp/cascadia-mock.log 2>&1 &
+CASCADIA_MOCK_LISTEN_ADDR="127.0.0.1:$MOCK_PORT" \
+  "$REPO/target/release/cascadia-mock-upstream" >/tmp/cascadia-mock.log 2>&1 &
 MOCK_PID=$!
-echo "[quickstart]       mock upstream started (pid $MOCK_PID, log /tmp/cascadia-mock.log)"
+echo "[quickstart]       mock upstream started on :$MOCK_PORT (pid $MOCK_PID, log /tmp/cascadia-mock.log)"
 
+# NOTE: the proxy reads CASCADIA_LISTEN_ADDR (host:port), not a bare port.
 CASCADIA_OPENAI_API_KEY=mock \
-CASCADIA_OPENAI_BASE_URL=http://127.0.0.1:18081 \
+CASCADIA_OPENAI_BASE_URL="http://127.0.0.1:$MOCK_PORT" \
 CASCADIA_DATABASE_URL="$PG_URL" \
 CASCADIA_POLICY_FILE="$POLICY_FILE" \
 CASCADIA_CLUSTER_BUCKETS=4 \
-CASCADIA_LISTEN_PORT="$PROXY_PORT" \
+CASCADIA_LISTEN_ADDR="127.0.0.1:$PROXY_PORT" \
   "$REPO/target/release/cascadia-proxy" >/tmp/cascadia-proxy.log 2>&1 &
 PROXY_PID=$!
-echo "[quickstart]       proxy starting (pid $PROXY_PID, log /tmp/cascadia-proxy.log)"
+echo "[quickstart]       proxy starting on :$PROXY_PORT (pid $PROXY_PID, log /tmp/cascadia-proxy.log)"
 
 echo "[quickstart]       waiting for proxy /readyz on :$PROXY_PORT..."
 for _ in $(seq 1 60); do
@@ -106,6 +153,10 @@ for _ in $(seq 1 60); do
   sleep 0.5
 done
 
+# Step 4 uses the self-contained pareto-frontier harness to seed Pareto data.
+# It runs its OWN ephemeral proxy+mock (ports 18080/18081) and tears them down
+# on exit, so it must not collide with our long-lived stack above - which is
+# why our mock defaults to 18091, not 18081.
 if [ "$TRAFFIC" != "0" ]; then
   echo "[quickstart] 4/5 - driving $TRAFFIC synthetic requests to populate Pareto data..."
   bench/scripts/pareto-frontier.sh "$TRAFFIC" || \
@@ -121,10 +172,13 @@ echo "[quickstart] 5/5 - starting dashboard-api + dashboard..."
     # shellcheck disable=SC1091
     . .venv/bin/activate
   fi
-  CASCADIA_DATABASE_URL="$PG_URL" cascadia-dashboard-api
+  CASCADIA_DATABASE_URL="$PG_URL" \
+  CASCADIA_DASHBOARD_PORT="$API_PORT" \
+  CASCADIA_PROXY_URL="http://127.0.0.1:$PROXY_PORT" \
+    cascadia-dashboard-api
 ) >/tmp/cascadia-dashboard-api.log 2>&1 &
 API_PID=$!
-echo "[quickstart]       dashboard-api started (pid $API_PID, log /tmp/cascadia-dashboard-api.log)"
+echo "[quickstart]       dashboard-api started on :$API_PORT (pid $API_PID, log /tmp/cascadia-dashboard-api.log)"
 
 cd dashboard
 echo "[quickstart]       installing dashboard deps (npm install)..."
@@ -134,7 +188,7 @@ cat <<EOF
 
 [quickstart] [ok] Stack is up.
              Proxy        ->  http://localhost:$PROXY_PORT  (OpenAI-compatible at /v1)
-             Dashboard    ->  http://localhost:3000
+             Dashboard    ->  http://localhost:$DASH_PORT
              dashboard-api logs -> /tmp/cascadia-dashboard-api.log
 
              The operator dashboard is gated by login. First visit redirects to
@@ -145,5 +199,10 @@ cat <<EOF
 
 EOF
 
-# Foreground - Ctrl-C here triggers the cleanup trap above.
-CASCADIA_AUTH_DISABLED="${CASCADIA_AUTH_DISABLED:-}" npm run dev
+# Foreground - Ctrl-C here triggers the cleanup trap above. We invoke `next`
+# directly (not `npm run dev`, which hardcodes -p 3000) so the resolved
+# dashboard port takes effect, and point the UI + middleware at the resolved
+# dashboard-api port.
+CASCADIA_DASHBOARD_API_BASE="http://127.0.0.1:$API_PORT" \
+CASCADIA_AUTH_DISABLED="${CASCADIA_AUTH_DISABLED:-}" \
+  ./node_modules/.bin/next dev -p "$DASH_PORT"

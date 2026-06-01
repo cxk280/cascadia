@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Task 2 — Real MT-Bench + HumanEval Pareto benchmark.
+# Task 2 - Real MT-Bench + HumanEval Pareto benchmark.
 #
 # This is the honest sibling of `multi-provider-pareto.sh`. Where that script
 # *injects* synthetic judge scores (constant per cluster) so the demo chart is
@@ -8,13 +8,13 @@
 #   1. pulls the public MT-Bench + HumanEval prompt sets,
 #   2. drives them through the cascade against REAL providers,
 #   3. scores the resulting shadow_pairs with the REAL bias-corrected judge
-#      ensemble (the poller — which persists shadow_pairs.ensemble_score per
+#      ensemble (the poller - which persists shadow_pairs.ensemble_score per
 #      EC-O1), not a synthetic injector,
 #   4. refits the policy from those real scores,
 #   5. writes the measured per-cluster operating points the dashboard /pareto
 #      reads (AVG(shadow_pairs.ensemble_score)).
 #
-# It runs two arms so the headline §7 number ("cost reduction at quality") is a
+# It runs two arms so the headline section 7 number ("cost reduction at quality") is a
 # measured result, not a seed:
 #   - baseline : best tier everywhere (cheap_model == expensive_model == the
 #                expensive tier). Quality ceiling, full cost.
@@ -36,8 +36,8 @@
 #   $ MTBENCH_N=20 HUMANEVAL_N=20 bench/scripts/mtbench-humaneval.sh   # cheap smoke
 #
 # Outputs:
-#   stdout                              — human-readable per-arm Pareto + headline
-#   /tmp/cascadia-mtbench-humaneval.json — machine-readable operating points
+#   stdout                              - human-readable per-arm Pareto + headline
+#   /tmp/cascadia-mtbench-humaneval.json - machine-readable operating points
 
 set -euo pipefail
 
@@ -63,7 +63,7 @@ ANTHROPIC_KEY="${CASCADIA_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}"
 
 if [[ -z "$OPENAI_KEY" ]]; then
     echo "ERROR: set CASCADIA_OPENAI_API_KEY (or OPENAI_API_KEY). This benchmark" >&2
-    echo "       drives real provider traffic; there is no mock fallback here —" >&2
+    echo "       drives real provider traffic; there is no mock fallback here -" >&2
     echo "       that's the whole point (see multi-provider-pareto.sh for the" >&2
     echo "       synthetic, free demo variant)." >&2
     exit 2
@@ -139,7 +139,7 @@ PYEOF
 N_PROMPTS="$(wc -l < "$PROMPTS_FILE" | tr -d ' ')"
 echo "==> ${N_PROMPTS} prompts (MT-Bench + HumanEval)"
 if [[ "$N_PROMPTS" -eq 0 ]]; then
-    echo "ERROR: no prompts extracted — check the dataset downloads in $DATA_DIR" >&2
+    echo "ERROR: no prompts extracted - check the dataset downloads in $DATA_DIR" >&2
     exit 1
 fi
 
@@ -195,7 +195,7 @@ drive_traffic() {
 
 score_with_real_ensemble() {
     # Drain every unjudged shadow_pair through the real judge ensemble. The
-    # poller persists shadow_pairs.ensemble_score (EC-O1) — the bias-corrected
+    # poller persists shadow_pairs.ensemble_score (EC-O1) - the bias-corrected
     # per-pair score the dashboard and controller both read.
     echo "    scoring shadow_pairs with the real judge ensemble (${JUDGE_PROVIDER}/${JUDGE_MODEL})"
     (
@@ -245,7 +245,7 @@ run_cascade() {
     emit_pareto "cascade" > "$DATA_DIR/pareto.tsv"
 }
 
-# Mixed cluster only when an Anthropic key is present (cheap haiku → expensive
+# Mixed cluster only when an Anthropic key is present (cheap haiku -> expensive
 # gpt-4o is the cross-provider quality story). Otherwise cluster-2 is just
 # another openai cluster so the policy stays valid.
 if [[ -n "$ANTHROPIC_KEY" ]]; then
@@ -258,7 +258,7 @@ fi
 # gpt-4o, with varied thresholds so the clusters spread across the cost axis.
 # (An earlier draft ran a second "best-tier-everywhere" baseline arm, but with
 # cheap_model == expensive_model that arm never "escalates", so its escalation-
-# based cost proxy reads 0% — making it look free when it is in fact full cost.
+# based cost proxy reads 0% - making it look free when it is in fact full cost.
 # The honest framing computes the baseline analytically: sending every request
 # to the expensive tier is cost = 1.0 by definition. No second paid run needed.)
 CASCADE_POLICY=$(cat <<JSON
@@ -279,7 +279,7 @@ JSON
 run_cascade "$CASCADE_POLICY"
 
 # --------------------------------------------------------------------------
-# Report — measured operating points + the §7 headline.
+# Report - measured operating points + the section 7 headline.
 # --------------------------------------------------------------------------
 echo
 echo "=========================================="
@@ -320,14 +320,14 @@ if rows:
     esc = sum(r["escalation_rate"] * r["sample_size"] for r in rows) / total_n
     quality = sum(r["mean_quality"] * r["sample_size"] for r in rows) / total_n
     print()
-    print(f"  learned cascade: escalation≈{esc*100:.1f}%  (cost≈{esc:.4f} vs baseline 1.00)")
-    print(f"  → cost reduction ≈ {(1.0-esc)*100:.1f}%  at mean ensemble quality {quality:.4f}")
+    print(f"  learned cascade: escalation~{esc*100:.1f}%  (cost~{esc:.4f} vs baseline 1.00)")
+    print(f"  -> cost reduction ~ {(1.0-esc)*100:.1f}%  at mean ensemble quality {quality:.4f}")
     print()
-    print("  Notes (honesty thesis — report these numbers as-is, do not re-tune):")
-    print("   • Cost proxy assumes cheap-tier price ≈ 0 vs the expensive tier;")
+    print("  Notes (honesty thesis - report these numbers as-is, do not re-tune):")
+    print("   * Cost proxy assumes cheap-tier price ~ 0 vs the expensive tier;")
     print("     plug a real price ratio if you want absolute dollars.")
-    print("   • 'quality' here is the cheap-vs-expensive ensemble signal, not an")
-    print("     absolute MT-Bench score. A full §7 three-arm served-response")
+    print("   * 'quality' here is the cheap-vs-expensive ensemble signal, not an")
+    print("     absolute MT-Bench score. A full section 7 three-arm served-response")
     print("     quality comparison is the next step on top of these points.")
 print(f"\n  wrote {len(rows)} operating points to {out_path}")
 PYEOF

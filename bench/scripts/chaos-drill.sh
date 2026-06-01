@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Task 5 — Chaos-resilience drill (§7 criterion).
+# Task 5 - Chaos-resilience drill (section 7 criterion).
 #
 # Claim under test: "kill the controller + judge for an hour, the proxy keeps
 # serving on its last-known policy." The proxy's hot path must not depend on
-# the judge worker or the policy controller — they're asynchronous side-cars.
+# the judge worker or the policy controller - they're asynchronous side-cars.
 # This drill proves it:
 #
 #   1. Start the proxy with a fixed policy file. The judge worker and policy
-#      controller are intentionally NOT running — that IS the outage state.
+#      controller are intentionally NOT running - that IS the outage state.
 #   2. For CHAOS_SECONDS, send requests at a steady interval. Every one must
 #      return 200: the proxy serves on its last-known policy with no judge and
 #      no controller alive.
 #   3. Assert /policy still serves the unchanged policy (the controller being
-#      dead just means it isn't being refit — not that routing stops).
+#      dead just means it isn't being refit - not that routing stops).
 #   4. Assert shadow_pairs accumulate UNSCORED (ensemble_score IS NULL): the
 #      judge being dead means pairs queue up, but the proxy is unaffected. When
 #      the judge returns it drains the backlog (run the poller, or
@@ -117,25 +117,25 @@ EVENTS="$(psql "$PG_URL" -tA -c "SELECT COUNT(*) FROM events;")"
 
 PASS=1
 echo "    requests: sent=${SENT} ok=${OK} fail=${FAIL}"
-[[ "$FAIL" -eq 0 && "$OK" -gt 0 ]] || { echo "    ✗ proxy dropped requests during the outage"; PASS=0; }
+[[ "$FAIL" -eq 0 && "$OK" -gt 0 ]] || { echo "    [X] proxy dropped requests during the outage"; PASS=0; }
 if [[ "$POLICY_BEFORE" == "$POLICY_AFTER" ]]; then
-    echo "    ✓ /policy unchanged through the outage (served last-known policy)"
+    echo "    [OK] /policy unchanged through the outage (served last-known policy)"
 else
-    echo "    ✗ /policy changed with the controller dead — unexpected"; PASS=0
+    echo "    [X] /policy changed with the controller dead - unexpected"; PASS=0
 fi
 echo "    events logged during outage: ${EVENTS}"
 echo "    shadow_pairs queued UNSCORED (judge dead): ${UNSCORED}"
-[[ "$UNSCORED" -gt 0 ]] || echo "    note: no unscored pairs — shadow_rate or traffic too low to enqueue work"
+[[ "$UNSCORED" -gt 0 ]] || echo "    note: no unscored pairs - shadow_rate or traffic too low to enqueue work"
 
 echo
 echo "=========================================="
 if [[ "$PASS" -eq 1 ]]; then
-    echo "CHAOS DRILL PASSED — proxy served ${OK}/${SENT} requests on last-known"
+    echo "CHAOS DRILL PASSED - proxy served ${OK}/${SENT} requests on last-known"
     echo "policy with judge + controller dead for ${CHAOS_SECONDS}s."
     echo "Recovery: start the judge poller (or run mtbench-humaneval.sh) and the"
-    echo "${UNSCORED} queued pairs drain — the proxy never noticed the outage."
+    echo "${UNSCORED} queued pairs drain - the proxy never noticed the outage."
 else
-    echo "CHAOS DRILL FAILED — see ✗ lines above."
+    echo "CHAOS DRILL FAILED - see [X] lines above."
 fi
 echo "=========================================="
 [[ "$PASS" -eq 1 ]]

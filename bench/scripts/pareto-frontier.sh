@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reproducible end-to-end benchmark: traffic → cascade → judge → controller →
+# Reproducible end-to-end benchmark: traffic -> cascade -> judge -> controller ->
 # Pareto chart data.
 #
 # Drives N requests through the cascade, scores the shadow pairs offline
@@ -17,8 +17,8 @@
 #   $ bench/scripts/pareto-frontier.sh [n_requests]
 #
 # Outputs:
-#   stdout — human-readable summary
-#   /tmp/cascadia-pareto.json — machine-readable Pareto points
+#   stdout - human-readable summary
+#   /tmp/cascadia-pareto.json - machine-readable Pareto points
 
 set -euo pipefail
 
