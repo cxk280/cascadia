@@ -1,17 +1,19 @@
 import Link from "next/link";
 
-import { Shell } from "@/components/Shell";
+import { AuthScreen } from "@/components/AuthScreen";
 
+// A 404 must not render the operator Shell (sidebar + header): a logged-out
+// visitor can hit a bad URL, and the nav links lead behind the session gate.
+// Use the chrome-free centered card instead.
 export default function NotFound() {
   return (
-    <Shell active="">
-      <h1 className="text-2xl font-semibold tracking-tight">404</h1>
-      <p className="text-fg-muted text-sm mt-2">
-        That page doesn&apos;t exist.{" "}
-        <Link href="/overview" className="text-accent hover:underline">
-          Back to overview →
-        </Link>
-      </p>
-    </Shell>
+    <AuthScreen title="404" subtitle="That page doesn't exist.">
+      <Link
+        href="/overview"
+        className="text-accent text-sm hover:underline"
+      >
+        Back to overview →
+      </Link>
+    </AuthScreen>
   );
 }
