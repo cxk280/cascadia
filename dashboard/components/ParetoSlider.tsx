@@ -36,6 +36,12 @@ export function ParetoSlider({ points }: { points: ParetoPoint[] }) {
   const minPct = best > 0 ? Math.max(1, Math.floor((worst / best) * 100)) : 1;
   const [pctOfBest, setPctOfBest] = useState(95);
   const clampedPct = Math.min(100, Math.max(minPct, pctOfBest));
+  // The slider navigates a *quality range*. When every scored cluster sits at
+  // ~the same quality (too few judged pairs yet, or all clusters share one
+  // model pair so only cost — not quality — differs), worst ≈ best and the
+  // range collapses to a single point. Disable it with an explanation rather
+  // than render a thumb that can't move.
+  const locked = !(best > 0) || minPct >= 100;
 
   const targetQuality = (clampedPct / 100) * best;
   const projectedCost = projectCostForQuality(frontier, targetQuality);
@@ -69,9 +75,22 @@ export function ParetoSlider({ points }: { points: ParetoPoint[] }) {
           step={1}
           value={clampedPct}
           onChange={(e) => setPctOfBest(Number(e.target.value))}
-          className="w-full mt-3 accent-accent"
+          disabled={locked}
+          className={`w-full mt-3 accent-accent ${
+            locked ? "opacity-40 cursor-not-allowed" : ""
+          }`}
           aria-valuetext={`${clampedPct} percent of best-tier quality`}
         />
+        {locked && (
+          <p className="text-xs text-fg-muted mt-2">
+            The slider is fixed because there isn&apos;t a quality range to
+            navigate yet: every scored cluster sits at ~the same measured
+            quality. That happens when too few shadow pairs have been judged, or
+            when all clusters share one model pair (so they differ in cost but
+            not quality). It becomes draggable once clusters diverge in measured
+            quality — e.g. when they run different cheap/expensive model pairs.
+          </p>
+        )}
         <div className="mt-4 grid grid-cols-2 gap-4">
           <div className="rounded-md border border-border bg-bg px-4 py-3">
             <div className="text-xs text-fg-muted">Projected cost</div>
