@@ -241,6 +241,18 @@ Originally scoped as a separate phase (PLAN.md §9 "open issues" 2026-05-19). Fo
 
 Newest first. Decisions are append-only; supersedes are noted by linking forward.
 
+### 2026-06-01 (later 3) — Postgres-backed policy distribution (closing the loop on Railway)
+
+The closed feedback loop (policy-controller refits thresholds → proxy hot-reloads) was wired over a **shared filesystem volume** mounted into both services (`deploy/compose/docker-compose.full.yml`, the "rendezvous volume"). That works under docker-compose but **not on Railway**, whose volumes attach to exactly one service. So the Railway dev deploy fell back to inline `CASCADIA_POLICY_JSON` on the proxy with the controller **inert** (no `CASCADIA_POLICY_FILE` to read/write) — i.e. the headline closed loop was open in the live environment.
+
+Decision: add a **Postgres-backed policy channel** as a third policy source, since both services already share Postgres.
+
+- **Schema.** Migration `0011_policy_store.sql` — append-only `policy_store(id, version, body jsonb, created_at)`. Latest row = `ORDER BY id DESC LIMIT 1`. Append-only doubles as an audit trail of every published policy.
+- **Proxy.** New `CASCADIA_POLICY_SOURCE=postgres` (default `json`/`file` unchanged). `watcher::spawn_pg` loads the latest row as the initial policy; **if the table is empty it seeds row 1 from the env policy** (`CASCADIA_POLICY_JSON`), so migrating off inline JSON is seamless. A background poll (every `CASCADIA_POLICY_POLL_SECS`, default 5s) hot-swaps the same `ArcSwap` the file watcher uses. Hot-path stays lock-free; a DB blip keeps the last-good policy (mirrors the file watcher's keep-previous-on-error) — honors the "hot path must not block on Postgres" invariant.
+- **Controller.** `AsyncpgPolicyStore` reads the latest policy and **publishes a new row only when a threshold actually changed** (`_thresholds_changed`) so the proxy doesn't log spurious reloads. `CASCADIA_POLICY_SOURCE=postgres` selects it; file mode stays for compose.
+- **Demo-friendly knobs.** The `UpdateRule` (target/margin/step/min-sample-size/min-threshold/max-threshold) is now fully env-overridable (`CASCADIA_REFIT_*`) so a demo can be made to visibly tune (lower min-sample-size, bigger step) without a code change. Backstop reality: even wired, thresholds only move once a cluster has ≥ min-sample-size judged scores and quality sits outside `target ± margin`.
+- **Tests.** Controller 39 → 46 (stub-pool `AsyncpgPolicyStore` round-trip + the no-op-skip helper); proxy 71 unchanged (the pg watcher is thin sqlx plumbing mirroring `events.rs`). Backward-compatible: `json`/`file` sources untouched.
+
 ### 2026-06-01 (later 2) — Email-verified signup (double opt-in)
 
 Signup now sends a real confirmation email and is not complete until the link is clicked. Chris's call: **block everyone, including the first/admin account** — no bootstrap exception.
