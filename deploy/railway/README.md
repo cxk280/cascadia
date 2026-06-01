@@ -41,6 +41,6 @@ pg_dump --no-owner --no-acl "$LOCAL_DSN" | psql "$RAILWAY_DSN"
 See `env-vars.md` in this directory for the complete matrix. The two non-obvious entries from the Option-B correction:
 
 - `dashboard.CASCADIA_CALIBRATE_USER=cascadia`
-- `dashboard.CASCADIA_CALIBRATE_PASS=QVTD7Uyc9PXuOixZB_5s` (generated; rotate via the Railway UI any time)
+- `dashboard.CASCADIA_CALIBRATE_PASS` — **secret; set in Railway only, never commit it.** Rotate via the Railway UI / `railway variable set` any time.
 
 There is **no** `CASCADIA_DEMO_MODE` anywhere — that Option-A toggle was abandoned.
