@@ -108,6 +108,33 @@ class TokenRequest(BaseModel):
     token: str = Field(min_length=1, max_length=512)
 
 
+class VerifyRequest(BaseModel):
+    """Body for /verify — the opaque verification token from the emailed link."""
+
+    token: str = Field(min_length=1, max_length=512)
+
+
+class ResendRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return normalize_email(v)
+
+
+class SignupAck(BaseModel):
+    """Returned by signup. Sign-up is NOT complete — no session is issued;
+    the user must click the emailed confirmation link first."""
+
+    email: str
+    verification_required: bool = True
+
+
+class GenericAck(BaseModel):
+    ok: bool = True
+
+
 class SessionUser(BaseModel):
     user_id: str
     email: str

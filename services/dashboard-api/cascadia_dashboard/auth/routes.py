@@ -1,26 +1,34 @@
 """FastAPI route registration for the operator-auth surface.
 
-  POST /api/auth/signup   — create an account, return a fresh session
-  POST /api/auth/login    — verify credentials, return a fresh session
-  POST /api/auth/session  — validate a presented token, return its owner
-  POST /api/auth/logout   — revoke a presented token
+  POST /api/auth/signup              — create an UNVERIFIED account + email a link
+  POST /api/auth/verify              — consume an email link, verify, return a session
+  POST /api/auth/resend-verification — re-send the confirmation email
+  POST /api/auth/login               — verify credentials (verified only), session
+  POST /api/auth/session             — validate a presented token, return its owner
+  POST /api/auth/logout              — revoke a presented token
 
 These are server-to-server endpoints: the browser never calls them directly.
 The Next.js dashboard's route handlers (under app/api/auth/*) forward to here
 and own the httpOnly session cookie, so the raw token never reaches browser
 JS and this service can stay off the public network — same posture as the
 calibration write surface.
+
+Signup is double-opt-in: it issues NO session, just emails a one-time link.
+The account can't log in until that link is used (including the first/admin
+account — no exception).
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Callable
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request, status
 
+from cascadia_dashboard.auth.email import EmailSender, email_sender_from_env
 from cascadia_dashboard.auth.security import (
     generate_session_token,
     hash_password,
@@ -32,16 +40,21 @@ from cascadia_dashboard.auth.store import (
     AuthStore,
     DuplicateEmailError,
     SESSION_TTL,
+    VERIFICATION_TTL,
 )
 from cascadia_dashboard.auth.types import (
     AuthResponse,
+    GenericAck,
     LoginRequest,
     LogoutAck,
+    ResendRequest,
     SessionResponse,
     SessionUser,
     SetRoleRequest,
+    SignupAck,
     SignupRequest,
     TokenRequest,
+    VerifyRequest,
 )
 
 log = logging.getLogger(__name__)
@@ -76,11 +89,38 @@ async def _issue_session(
     return token, expires_at
 
 
-def attach_auth_routes(app: FastAPI, get_store: Callable[[], AuthStore]) -> None:
-    router = APIRouter(prefix="/api/auth", tags=["auth"])
+async def _send_verification(
+    store: AuthStore, sender: EmailSender, dashboard_url: str, *, user_id: str, email: str
+) -> None:
+    """Mint a one-time verification token, persist its hash, and email the link.
+    Only the SHA-256 is stored; the raw token travels in the link."""
+    token = generate_session_token()
+    expires_at = datetime.now(timezone.utc) + VERIFICATION_TTL
+    await store.create_email_verification(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        token_sha256=hash_token(token),
+        expires_at=expires_at,
+    )
+    verify_url = f"{dashboard_url.rstrip('/')}/verify?token={token}"
+    await sender.send_verification(to_email=email, verify_url=verify_url)
 
-    @router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-    async def signup(req: SignupRequest, request: Request) -> AuthResponse:
+
+def attach_auth_routes(
+    app: FastAPI,
+    get_store: Callable[[], AuthStore],
+    *,
+    email_sender: EmailSender | None = None,
+    dashboard_url: str | None = None,
+) -> None:
+    router = APIRouter(prefix="/api/auth", tags=["auth"])
+    sender = email_sender or email_sender_from_env()
+    dash_url = dashboard_url or os.environ.get(
+        "CASCADIA_DASHBOARD_URL", "http://localhost:3000"
+    )
+
+    @router.post("/signup", response_model=SignupAck, status_code=status.HTTP_201_CREATED)
+    async def signup(req: SignupRequest) -> SignupAck:
         store = get_store()
         user_id = str(uuid.uuid4())
         password_hash = hash_password(req.password)
@@ -107,17 +147,47 @@ def attach_auth_routes(app: FastAPI, get_store: Callable[[], AuthStore]) -> None
                 status_code=status.HTTP_409_CONFLICT,
                 detail="an account with this email already exists",
             )
-        token, expires_at = await _issue_session(store, user_id=user_id, request=request)
+        # Double opt-in: NO session is issued. Email the confirmation link; the
+        # account stays unverified (can't log in) until it's used.
+        await _send_verification(
+            store, sender, dash_url, user_id=user_id, email=req.email
+        )
+        return SignupAck(email=req.email)
+
+    @router.post("/verify", response_model=AuthResponse)
+    async def verify(req: VerifyRequest, request: Request) -> AuthResponse:
+        verified = await get_store().consume_email_verification(hash_token(req.token))
+        if verified is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="verification link is invalid, expired, or already used",
+            )
+        # Verified — sign-up is now complete; log them in.
+        token, expires_at = await _issue_session(
+            get_store(), user_id=verified.user_id, request=request
+        )
         return AuthResponse(
             token=token,
             expires_at=expires_at,
             user=SessionUser(
-                user_id=user_id,
-                email=req.email,
-                display_name=req.display_name,
-                role=role,
+                user_id=verified.user_id,
+                email=verified.email,
+                display_name=verified.display_name,
+                role=verified.role,
             ),
         )
+
+    @router.post("/resend-verification", response_model=GenericAck)
+    async def resend_verification(req: ResendRequest) -> GenericAck:
+        store = get_store()
+        user = await store.get_user_by_email(req.email)
+        # Only act for a real, still-unverified account; ALWAYS return the same
+        # generic ack so this can't be used to probe which emails exist.
+        if user is not None and not user.email_verified:
+            await _send_verification(
+                store, sender, dash_url, user_id=user.user_id, email=user.email
+            )
+        return GenericAck()
 
     @router.post("/login", response_model=AuthResponse)
     async def login(req: LoginRequest, request: Request) -> AuthResponse:
@@ -135,6 +205,14 @@ def attach_auth_routes(app: FastAPI, get_store: Callable[[], AuthStore]) -> None
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="invalid email or password",
+            )
+        if not user.email_verified:
+            # Correct password but unconfirmed. We surface this specifically (it
+            # reveals the account exists, same as signup's 409) because the user
+            # needs to know to check their inbox / resend.
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="email not verified — check your inbox for the confirmation link",
             )
         # Transparent hash upgrade: if the stored hash predates a params bump,
         # re-hash now that we have the plaintext in hand.

@@ -22,6 +22,9 @@ import asyncpg
 # again. Logout revokes immediately regardless.
 SESSION_TTL = timedelta(days=30)
 
+# How long an email-confirmation link stays valid.
+VERIFICATION_TTL = timedelta(hours=24)
+
 
 class DuplicateEmailError(Exception):
     """Raised by `create_user` when the email is already registered."""
@@ -34,6 +37,18 @@ class StoredUser:
     password_hash: str
     display_name: str | None
     role: str = "operator"
+    email_verified: bool = False
+
+
+@dataclass(frozen=True)
+class VerifiedUser:
+    """The user row returned when a verification token is successfully
+    consumed — enough to mint a session."""
+
+    user_id: str
+    email: str
+    display_name: str | None
+    role: str
 
 
 @dataclass(frozen=True)
@@ -63,6 +78,12 @@ class AuthStore(Protocol):
     async def get_user_by_email(self, email: str) -> "StoredUser | None": ...
     async def count_users(self) -> int: ...
     async def set_role(self, email: str, role: str) -> bool: ...
+    async def create_email_verification(
+        self, *, id: str, user_id: str, token_sha256: str, expires_at: datetime
+    ) -> None: ...
+    async def consume_email_verification(
+        self, token_sha256: str
+    ) -> "VerifiedUser | None": ...
     async def update_last_login(self, user_id: str) -> None: ...
     async def update_password_hash(self, user_id: str, password_hash: str) -> None: ...
     async def create_session(
@@ -106,7 +127,7 @@ class AsyncpgAuthStore(AuthStore):
 
     async def get_user_by_email(self, email: str) -> StoredUser | None:
         sql = """
-            SELECT user_id, email, password_hash, display_name, role
+            SELECT user_id, email, password_hash, display_name, role, email_verified
               FROM auth_users
              WHERE LOWER(email) = LOWER($1)
              LIMIT 1
@@ -118,6 +139,51 @@ class AsyncpgAuthStore(AuthStore):
             user_id=str(row["user_id"]),
             email=row["email"],
             password_hash=row["password_hash"],
+            display_name=row["display_name"],
+            role=row["role"],
+            email_verified=row["email_verified"],
+        )
+
+    async def create_email_verification(
+        self, *, id: str, user_id: str, token_sha256: str, expires_at: datetime
+    ) -> None:
+        await self._pool.execute(
+            "INSERT INTO auth_email_verifications "
+            "(id, user_id, token_sha256, expires_at) VALUES ($1, $2, $3, $4)",
+            id,
+            user_id,
+            token_sha256,
+            expires_at,
+        )
+
+    async def consume_email_verification(
+        self, token_sha256: str
+    ) -> VerifiedUser | None:
+        # One statement: spend the (unconsumed, unexpired) token AND flip the
+        # user's email_verified, returning the user. No row -> token was
+        # absent/expired/already-used.
+        sql = """
+            WITH v AS (
+                UPDATE auth_email_verifications
+                   SET consumed_at = NOW()
+                 WHERE token_sha256 = $1
+                   AND consumed_at IS NULL
+                   AND expires_at > NOW()
+                RETURNING user_id
+            ), u AS (
+                UPDATE auth_users
+                   SET email_verified = true
+                 WHERE user_id = (SELECT user_id FROM v)
+                RETURNING user_id, email, display_name, role
+            )
+            SELECT user_id, email, display_name, role FROM u
+        """
+        row = await self._pool.fetchrow(sql, token_sha256)
+        if row is None:
+            return None
+        return VerifiedUser(
+            user_id=str(row["user_id"]),
+            email=row["email"],
             display_name=row["display_name"],
             role=row["role"],
         )
@@ -212,6 +278,8 @@ class InMemoryAuthStore(AuthStore):
         self._email_index: dict[str, str] = {}  # lower(email) -> user_id
         # token_sha256 -> session dict
         self._sessions: dict[str, dict] = {}
+        # token_sha256 -> verification dict
+        self._verifications: dict[str, dict] = {}
 
     async def create_user(
         self,
@@ -267,7 +335,42 @@ class InMemoryAuthStore(AuthStore):
                 password_hash=password_hash,
                 display_name=u.display_name,
                 role=u.role,
+                email_verified=u.email_verified,
             )
+
+    async def create_email_verification(
+        self, *, id: str, user_id: str, token_sha256: str, expires_at: datetime
+    ) -> None:
+        self._verifications[token_sha256] = {
+            "id": id,
+            "user_id": user_id,
+            "expires_at": expires_at,
+            "consumed": False,
+        }
+
+    async def consume_email_verification(
+        self, token_sha256: str
+    ) -> VerifiedUser | None:
+        v = self._verifications.get(token_sha256)
+        if v is None or v["consumed"]:
+            return None
+        if v["expires_at"] <= datetime.now(timezone.utc):
+            return None
+        v["consumed"] = True
+        u = self._users.get(v["user_id"])
+        if u is None:
+            return None
+        self._users[u.user_id] = StoredUser(
+            user_id=u.user_id,
+            email=u.email,
+            password_hash=u.password_hash,
+            display_name=u.display_name,
+            role=u.role,
+            email_verified=True,
+        )
+        return VerifiedUser(
+            user_id=u.user_id, email=u.email, display_name=u.display_name, role=u.role
+        )
 
     async def create_session(
         self,

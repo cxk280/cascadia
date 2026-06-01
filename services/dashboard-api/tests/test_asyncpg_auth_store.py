@@ -55,6 +55,7 @@ async def test_get_user_by_email_maps_row() -> None:
             "password_hash": "$argon2id$h",
             "display_name": "A",
             "role": "admin",
+            "email_verified": True,
         }
     )
     store = AsyncpgAuthStore(pool)
@@ -64,6 +65,31 @@ async def test_get_user_by_email_maps_row() -> None:
     assert u.email == "a@b.dev"
     assert u.password_hash == "$argon2id$h"
     assert u.role == "admin"
+    assert u.email_verified is True
+
+
+@pytest.mark.asyncio
+async def test_consume_email_verification_maps_row() -> None:
+    pool = _pool()
+    pool.fetchrow = AsyncMock(
+        return_value={
+            "user_id": "u1",
+            "email": "a@b.dev",
+            "display_name": "A",
+            "role": "operator",
+        }
+    )
+    store = AsyncpgAuthStore(pool)
+    v = await store.consume_email_verification("deadbeef")
+    assert v is not None and v.user_id == "u1" and v.role == "operator"
+
+
+@pytest.mark.asyncio
+async def test_consume_email_verification_none_when_no_row() -> None:
+    pool = _pool()
+    pool.fetchrow = AsyncMock(return_value=None)
+    store = AsyncpgAuthStore(pool)
+    assert await store.consume_email_verification("deadbeef") is None
 
 
 @pytest.mark.asyncio
