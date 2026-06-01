@@ -44,6 +44,25 @@ One command: brings up Postgres, writes a starter policy, builds and starts the 
 
 **Deploying instead?** Kubernetes → [`deploy/helm/cascadia/`](deploy/helm/cascadia/README.md). Full container stack → `deploy/compose/docker-compose.full.yml`. Railway/Render/Fly → [PLAN.md §9 (2026-05-20)](PLAN.md).
 
+## Accounts & email confirmation
+
+The operator dashboard is gated by email + password auth. Signup is **double opt-in**: it creates an unverified account and emails a one-time confirmation link — the account can't sign in until that link is clicked. The **first** confirmed account becomes **admin**; everyone else is an **operator**, and an admin can promote others to **reviewer** (calibration-only) or admin. Calibration is admin/reviewer-only — operators consume the calibrated judge, they don't label.
+
+The confirmation email is sent over **SMTP** (works with Resend, SES, Postmark, Mailgun, Gmail, any SMTP host). **With no SMTP configured the link is logged instead of sent** (`grep "verification link" /tmp/cascadia-dashboard-api.log`) so local dev works offline. To send for real, set these on the dashboard-api:
+
+```bash
+export CASCADIA_SMTP_HOST=smtp.resend.com   # e.g. Resend
+export CASCADIA_SMTP_PORT=465               # 465 = SSL; 587 = STARTTLS
+export CASCADIA_SMTP_USER=resend            # provider-specific (Resend: literally "resend")
+export CASCADIA_SMTP_PASS=re_...            # the provider API key / SMTP password
+export CASCADIA_SMTP_FROM=onboarding@resend.dev   # a verified sender (Resend's sandbox delivers to your own address)
+export CASCADIA_DASHBOARD_URL=https://your-dashboard   # base for the link (quickstart sets this to the local URL)
+
+./scripts/test-email.sh you@example.com     # verify delivery before relying on it
+```
+
+Sessions are opaque server-side tokens in an httpOnly cookie (revocable, no JWT); see [SECURITY.md](SECURITY.md) and [PLAN.md §9](PLAN.md) for the threat model and rationale.
+
 ## Use it from the OpenAI SDK
 
 Point any OpenAI client's `base_url` at the proxy (note the trailing `/v1`); streaming, tool-use, `response_format`, and multi-turn all keep working.
