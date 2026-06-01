@@ -15,7 +15,7 @@ Cascadia speaks the **OpenAI** chat-completions shape on the inbound side
 (`POST /v1/chat/completions`). Any OpenAI-API client works by overriding three things:
 
 ```bash
-export OPENAI_BASE_URL="https://cascadia-proxy-dev.up.railway.app/v1"
+export OPENAI_BASE_URL="http://localhost:8080/v1"
 export OPENAI_API_KEY="<CASCADIA_PROXY_BEARER_TOKEN>"   # the proxy's bearer, not a provider key
 # then call with model "auto" — the policy picks cheap-vs-expensive per cluster:
 curl "$OPENAI_BASE_URL/chat/completions" \
@@ -43,16 +43,16 @@ Keep `model: "auto"` so the cascade decides; a pinned `provider/model` bypasses 
 With real traffic flowing, watch the dashboard converge — the §7 target is **stable
 routing within 24h**:
 
-1. **Clusters form.** [`/clusters`](https://cascadia-dashboard-dev.up.railway.app/clusters)
+1. **Clusters form.** [`/clusters`](http://localhost:3000/clusters)
    — the hash classifier bins your prompts into real semantic categories. Early on the
    counts are lumpy; they stabilize as volume grows.
 2. **Shadow pairs get scored.** The judge worker scores the shadowed pairs; `mean judge
-   score` and `judge sample size` climb on [`/`](https://cascadia-dashboard-dev.up.railway.app/).
+   score` and `judge sample size` climb on [`/`](http://localhost:3000/).
 3. **The controller refits.** Each refit moves the per-cluster `threshold` toward the
    cheapest tier that still clears your quality bar (it tunes on the bias-corrected
    `shadow_pairs.ensemble_score`, EC-O1).
 4. **The Pareto points move.** On
-   [`/pareto`](https://cascadia-dashboard-dev.up.railway.app/pareto), drag the slider to
+   [`/pareto`](http://localhost:3000/pareto), drag the slider to
    project a cost for a target quality, and watch the back-test coverage rise as the
    points become a real frontier instead of a sparse scatter.
 

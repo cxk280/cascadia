@@ -15,7 +15,7 @@ Importable Postman files for hitting a Cascadia proxy without hand-rolling `curl
    - The token is stored only in your local Postman environment — it is **not** committed here (the file ships with an empty value).
 4. Open **Chat completion (cascade)** and hit **Send**.
 
-`baseUrl` defaults to the dev proxy (`https://cascadia-proxy-dev.up.railway.app`). Point it at any other Cascadia proxy by editing the variable.
+`baseUrl` defaults to a local proxy (`http://localhost:8080`). Point it at any other Cascadia proxy by editing the variable.
 
 ## Generating dashboard data (the Collection Runner)
 
