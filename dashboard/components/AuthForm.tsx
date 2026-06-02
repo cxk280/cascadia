@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 type Mode = "login" | "signup";
@@ -39,7 +39,6 @@ async function resendVerification(email: string): Promise<void> {
 }
 
 export function AuthForm({ mode }: { mode: Mode }) {
-  const router = useRouter();
   const next = safeNext(useSearchParams().get("next"));
 
   const [email, setEmail] = useState("");
@@ -100,8 +99,11 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
       // login
       if (res.ok) {
-        router.push(next);
-        router.refresh();
+        // Full navigation, NOT router.push: the session cookie was just set, but
+        // a client-side nav to a middleware-gated route can render the RSC payload
+        // that was prefetched while logged OUT — you'd appear logged out until a
+        // manual refresh. A real navigation re-runs middleware with the cookie.
+        window.location.assign(next);
         return;
       }
       const data = await res.json().catch(() => ({}));

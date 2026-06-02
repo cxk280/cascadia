@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 type State = "verifying" | "ok" | "error";
@@ -9,7 +9,6 @@ type State = "verifying" | "ok" | "error";
 // Consumes the one-time token from the emailed link. On success the route
 // handler sets the session cookie, so we land in the dashboard logged in.
 export function VerifyClient() {
-  const router = useRouter();
   const token = useSearchParams().get("token");
   const [state, setState] = useState<State>("verifying");
   const ran = useRef(false);
@@ -29,14 +28,15 @@ export function VerifyClient() {
       .then((res) => {
         if (res.ok) {
           setState("ok");
-          router.push("/overview");
-          router.refresh();
+          // Full navigation (see AuthForm): verification just set the session
+          // cookie; a client-side nav could render the logged-out RSC payload.
+          window.location.assign("/overview");
         } else {
           setState("error");
         }
       })
       .catch(() => setState("error"));
-  }, [token, router]);
+  }, [token]);
 
   if (state === "verifying") {
     return <p className="text-sm text-fg-muted">Confirming your account…</p>;
