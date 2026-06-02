@@ -266,6 +266,62 @@ def test_logout_revokes_session(client, email_sender):
     assert client.post("/api/auth/session", json={"token": token}).status_code == 401
 
 
+# --- demo seed admin (CASCADIA_DEMO-gated) ----------------------------------
+
+def _seeded_client(auth_store, email_sender) -> TestClient:
+    app = create_app(
+        store=InMemoryStore(),
+        calibration_store=InMemoryCalibrationStore(),
+        auth_store=auth_store,
+        email_sender=email_sender,
+    )
+    return TestClient(app)  # entering the context runs the lifespan → _seed_admin
+
+
+def test_seed_admin_in_demo_mode_can_log_in(
+    monkeypatch: pytest.MonkeyPatch, auth_store, email_sender
+) -> None:
+    monkeypatch.setenv("CASCADIA_DEMO", "true")
+    monkeypatch.setenv("CASCADIA_SEED_ADMIN_EMAIL", "foo@bar.com")
+    monkeypatch.setenv("CASCADIA_SEED_ADMIN_PASSWORD", "admin123")
+    with _seeded_client(auth_store, email_sender) as client:
+        r = client.post(
+            "/api/auth/login", json={"email": "foo@bar.com", "password": "admin123"}
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["user"]["email"] == "foo@bar.com"
+        assert body["user"]["role"] == "admin"  # seeded as admin, pre-verified
+
+
+def test_seed_admin_refused_without_demo_flag(
+    monkeypatch: pytest.MonkeyPatch, auth_store, email_sender
+) -> None:
+    # Seed vars present but CASCADIA_DEMO unset → NO account is created, so the
+    # hardcoded creds can't be used outside the demo.
+    monkeypatch.delenv("CASCADIA_DEMO", raising=False)
+    monkeypatch.setenv("CASCADIA_SEED_ADMIN_EMAIL", "foo@bar.com")
+    monkeypatch.setenv("CASCADIA_SEED_ADMIN_PASSWORD", "admin123")
+    with _seeded_client(auth_store, email_sender) as client:
+        r = client.post(
+            "/api/auth/login", json={"email": "foo@bar.com", "password": "admin123"}
+        )
+        assert r.status_code == 401  # account never existed
+
+
+def test_seed_admin_noop_without_vars(
+    monkeypatch: pytest.MonkeyPatch, auth_store, email_sender
+) -> None:
+    monkeypatch.setenv("CASCADIA_DEMO", "true")
+    monkeypatch.delenv("CASCADIA_SEED_ADMIN_EMAIL", raising=False)
+    monkeypatch.delenv("CASCADIA_SEED_ADMIN_PASSWORD", raising=False)
+    with _seeded_client(auth_store, email_sender) as client:
+        # Demo mode on but no creds → nothing seeded; a normal signup still works.
+        assert client.post(
+            "/api/auth/signup", json={"email": "ops@cascadia.dev", "password": "hunter2hunter"}
+        ).status_code == 201
+
+
 def test_password_hash_is_not_plaintext(auth_store):
     import asyncio
 

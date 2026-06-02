@@ -74,6 +74,7 @@ class AuthStore(Protocol):
         password_hash: str,
         display_name: str | None,
         role: str = "operator",
+        email_verified: bool = False,
     ) -> None: ...
     async def get_user_by_email(self, email: str) -> "StoredUser | None": ...
     async def count_users(self) -> int: ...
@@ -111,14 +112,15 @@ class AsyncpgAuthStore(AuthStore):
         password_hash: str,
         display_name: str | None,
         role: str = "operator",
+        email_verified: bool = False,
     ) -> None:
         sql = """
-            INSERT INTO auth_users (user_id, email, password_hash, display_name, role)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO auth_users (user_id, email, password_hash, display_name, role, email_verified)
+            VALUES ($1, $2, $3, $4, $5, $6)
         """
         try:
             await self._pool.execute(
-                sql, user_id, email, password_hash, display_name, role
+                sql, user_id, email, password_hash, display_name, role, email_verified
             )
         except asyncpg.exceptions.UniqueViolationError as exc:
             # The LOWER(email) unique index (or the PK) fired. Either way the
@@ -289,6 +291,7 @@ class InMemoryAuthStore(AuthStore):
         password_hash: str,
         display_name: str | None,
         role: str = "operator",
+        email_verified: bool = False,
     ) -> None:
         if email.lower() in self._email_index:
             raise DuplicateEmailError(email)
@@ -298,6 +301,7 @@ class InMemoryAuthStore(AuthStore):
             password_hash=password_hash,
             display_name=display_name,
             role=role,
+            email_verified=email_verified,
         )
         self._email_index[email.lower()] = user_id
 

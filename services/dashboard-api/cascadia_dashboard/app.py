@@ -7,8 +7,10 @@ CORS is wired wide-open by default; production deployments should set
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import socket
+import uuid
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from importlib.metadata import PackageNotFoundError, version
@@ -21,8 +23,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from cascadia_dashboard.auth import (
     AsyncpgAuthStore,
     AuthStore,
+    DuplicateEmailError,
     attach_auth_routes,
 )
+from cascadia_dashboard.auth.security import hash_password
 from cascadia_dashboard.calibrate import (
     AsyncpgCalibrationStore,
     CalibrationStore,
@@ -44,6 +48,55 @@ def _service_version() -> str:
         return version("cascadia-dashboard-api")
     except PackageNotFoundError:
         return "dev"
+
+
+async def _seed_admin(auth_store: AuthStore) -> None:
+    """Create a pre-verified admin from CASCADIA_SEED_ADMIN_EMAIL/_PASSWORD.
+
+    **Demo-only.** This exists so the keyless demo has a known login without an
+    email round-trip (the demo has no SMTP). It is hard-gated behind
+    `CASCADIA_DEMO=true` so a hardcoded admin can NEVER be created in a real
+    deployment — even if the seed env vars are present. Self-hosters onboard via
+    real signup; they should not set CASCADIA_DEMO.
+
+    No-op unless demo mode is on AND both seed vars are set. Idempotent.
+    """
+    log = logging.getLogger(__name__)
+    demo_mode = (os.environ.get("CASCADIA_DEMO") or "").strip().lower() == "true"
+    has_seed_vars = bool(
+        os.environ.get("CASCADIA_SEED_ADMIN_EMAIL")
+        or os.environ.get("CASCADIA_SEED_ADMIN_PASSWORD")
+    )
+    if not demo_mode:
+        if has_seed_vars:
+            log.warning(
+                "[seed] CASCADIA_SEED_ADMIN_* is set but IGNORED: seeding a known "
+                "admin is demo-only and requires CASCADIA_DEMO=true. Refusing to "
+                "create a hardcoded account in a non-demo deployment."
+            )
+        return
+    email = (os.environ.get("CASCADIA_SEED_ADMIN_EMAIL") or "").strip().lower()
+    password = os.environ.get("CASCADIA_SEED_ADMIN_PASSWORD") or ""
+    if not email or not password:
+        return
+    if await auth_store.get_user_by_email(email) is not None:
+        return
+    try:
+        await auth_store.create_user(
+            user_id=str(uuid.uuid4()),
+            email=email,
+            password_hash=hash_password(password),
+            display_name="Demo Admin",
+            role="admin",
+            email_verified=True,
+        )
+        log.warning(
+            "[seed] DEMO MODE: created pre-verified admin %r from "
+            "CASCADIA_SEED_ADMIN_* — known credentials, demo use only.",
+            email,
+        )
+    except DuplicateEmailError:
+        pass  # raced with another worker; fine
 
 
 def create_app(
@@ -87,6 +140,12 @@ def create_app(
             # separate ownership flag — it doesn't hold a pool of its own.
             if state["auth_store"] is None:
                 state["auth_store"] = AsyncpgAuthStore(asyncpg_store._pool)  # type: ignore[attr-defined]
+        # Optional: seed a pre-verified admin from env. Used by the keyless demo
+        # so a fresh stack has known login creds (no email round-trip); also a
+        # convenient bootstrap for self-hosters. No-op unless both vars are set,
+        # and idempotent (skips if the account already exists).
+        if state["auth_store"] is not None:
+            await _seed_admin(state["auth_store"])  # type: ignore[arg-type]
         try:
             yield
         finally:

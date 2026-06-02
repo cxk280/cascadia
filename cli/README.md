@@ -16,7 +16,9 @@ npx cascadia-gateway doctor    # preflight checks
 Only needs **Docker** (and Node, for `npx`). Brings up the whole stack —
 proxy, dashboard, judge, controller, Postgres — pointed at an in-process **mock
 upstream**, so there are **no API keys and no cost**. It then drives a little
-traffic and opens a dashboard at `http://localhost:3000` (login gate disabled).
+traffic and opens a dashboard at `http://localhost:3000`. Log in with the demo
+account **`foo@bar.com` / `admin123`** (seeded only in the demo — gated behind
+`CASCADIA_DEMO=true`, so it can never exist in a real deployment).
 
 The closed loop is real: the judge scores shadow pairs and the policy controller
 refits per-cluster thresholds every ~30s, which the proxy hot-reloads via its

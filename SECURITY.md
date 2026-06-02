@@ -134,12 +134,14 @@ The operator dashboard is gated by email + password auth (added 2026-06-01; see 
 
 ### Self-hosted vs. maintainer-hosted (demo) deployments
 
-Cascadia is meant to be **run locally or self-hosted with your own provider keys** (`npx cascadia` / docker compose). The maintainer-hosted instances exist only for demos and are **not** meant to carry third-party traffic. Operators of a public/shared instance should:
+Cascadia is meant to be **run locally or self-hosted with your own provider keys** (`npx cascadia-gateway up` / docker compose). The maintainer-hosted instances exist only for demos and are **not** meant to carry third-party traffic. Operators of a public/shared instance should:
 
 - **Bearer-gate `/v1/*`** (`CASCADIA_PROXY_BEARER_TOKEN`) — without it the proxy is open and anyone can spend your provider budget. This is the single most important control on a reachable deployment.
 - **Set hard spend caps** at the provider (OpenAI/Anthropic/Groq) and on transactional email (Resend), or use deployment-scoped keys with low limits — the backstop if a token ever leaks.
 - **Seal signup** (`CASCADIA_SIGNUP_DISABLED=true`) once your admin account exists, so strangers can't create operator accounts or trigger confirmation emails.
 - Optionally scale the deployment to zero when idle — no surface, no cost.
+
+**Demo-seeded admin is demo-only.** The keyless `cascadia-gateway demo` seeds a pre-verified admin with *known, published* credentials (`foo@bar.com` / `admin123`) so there's no email round-trip on a stack with no SMTP. This seeding is **hard-gated behind `CASCADIA_DEMO=true`**: with the flag unset, `CASCADIA_SEED_ADMIN_*` is ignored (and logged as ignored), so a hardcoded login can never be created on a self-hosted or production instance. `npx cascadia-gateway up` and the Railway deploys do not set `CASCADIA_DEMO`; never set it on an instance that carries real traffic.
 
 ### Unauthenticated read endpoints (information disclosure by design)
 
