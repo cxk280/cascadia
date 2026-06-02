@@ -1,6 +1,6 @@
 # Cascadia
 
-[![CI](https://github.com/christopherking/cascadia/actions/workflows/ci.yml/badge.svg)](https://github.com/christopherking/cascadia/actions/workflows/ci.yml)
+[![CI](https://github.com/cxk280/cascadia/actions/workflows/ci.yml/badge.svg)](https://github.com/cxk280/cascadia/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](rust-toolchain.toml)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](services/judge-worker/pyproject.toml)
@@ -22,7 +22,7 @@ The output is a **cost/quality Pareto frontier** per cluster — the curve of be
 No API key. No account. No sign-up. No cost. If you have **[Docker](https://docs.docker.com/get-docker/)** (running) and **[Node](https://nodejs.org/) 18+**, that's everything you need:
 
 ```bash
-npx cascadia demo
+npx cascadia-gateway demo
 ```
 
 That single command brings up the whole system in Docker and points it at a **built-in mock model** instead of a real provider — so it's completely free and works offline. It then sends a little sample traffic and prints a link. Open it:
@@ -36,9 +36,9 @@ That single command brings up the whole system in Docker and points it at a **bu
 | | |
 |---|---|
 | First run is slow? | It compiles the services the first time (a few minutes); every run after is instant. |
-| Something off? | `npx cascadia doctor` checks Docker, ports, and the rest. |
-| Done? | `npx cascadia down` stops everything and wipes the demo's data. |
-| Want real models? | `npx cascadia up` asks for your OpenAI + Anthropic keys and runs the same stack live (this spends real API budget). |
+| Something off? | `npx cascadia-gateway doctor` checks Docker, ports, and the rest. |
+| Done? | `npx cascadia-gateway down` stops everything and wipes the demo's data. |
+| Want real models? | `npx cascadia-gateway up` asks for your OpenAI + Anthropic keys and runs the same stack live (this spends real API budget). |
 
 Prefer to read the launcher source or run from a clone? See [`cli/`](cli/README.md) and [Quick start](#quick-start) below.
 
@@ -59,7 +59,7 @@ Three things competitors structurally don't do: **counterfactual shadow routing*
 
 ## Quick start
 
-The fastest path is the keyless `npx cascadia demo` above — only Docker + Node, no keys, no cost. `npx cascadia up` runs the same stack against real providers (it prompts for your keys). Both wrap Docker Compose; the launcher lives in [`cli/`](cli/README.md).
+The fastest path is the keyless `npx cascadia-gateway demo` above — only Docker + Node, no keys, no cost. `npx cascadia-gateway up` runs the same stack against real providers (it prompts for your keys). Both wrap Docker Compose; the launcher lives in [`cli/`](cli/README.md).
 
 **From source (contributors).** If you have the Rust + Python/uv + Node toolchain and want host-process iteration instead of containers:
 
@@ -71,7 +71,7 @@ One command: brings up Postgres, writes a starter policy, builds and starts the 
 
 **Live data, standalone (real providers, real cost).** `CASCADIA_LIVE=1 ./scripts/quickstart.sh` runs the same stack against a real cascade instead of the mock — Anthropic `claude-haiku-4-5` → `claude-sonnet-4-6` by default — with real traffic, a real multi-model **judge panel** scoring shadow pairs live, and the controller refitting on a loop. Needs `ANTHROPIC_API_KEY` (cascade) and `OPENAI_API_KEY` (cross-family judge — the panel must be a different family than the cascade). Live mode **clears the synthetic seed first** so the dashboard shows only live data; add **`QUICKSTART_TRAFFIC=0`** to start from an empty dashboard and drive your own traffic (handy on camera — watch the KPIs and Pareto chart fill in real time). Signup is **double opt-in** — it emails a confirmation link you must click to finish (with no SMTP configured, the link is printed to `/tmp/cascadia-dashboard-api.log`); the first confirmed account becomes **admin**, and calibration is admin/reviewer-only (operators consume the calibrated judge, they don't label). The same mode becomes a LiteLLM-stacked demo later by pointing `CASCADIA_OPENAI_BASE_URL` at LiteLLM — no code change.
 
-**Deploying instead?** Kubernetes → [`deploy/helm/cascadia/`](deploy/helm/cascadia/README.md). Container stacks → `deploy/compose/docker-compose.demo.yml` (keyless demo, what `npx cascadia demo` runs) and `docker-compose.full.yml` (real providers). Railway/Render/Fly → [PLAN.md §9 (2026-05-20)](PLAN.md).
+**Deploying instead?** Kubernetes → [`deploy/helm/cascadia/`](deploy/helm/cascadia/README.md). Container stacks → `deploy/compose/docker-compose.demo.yml` (keyless demo, what `npx cascadia-gateway demo` runs) and `docker-compose.full.yml` (real providers). Railway/Render/Fly → [PLAN.md §9 (2026-05-20)](PLAN.md).
 
 ## Accounts & email confirmation
 
