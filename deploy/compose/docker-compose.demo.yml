@@ -133,6 +133,14 @@ services:
       CASCADIA_DATABASE_URL: *db
       CASCADIA_DASHBOARD_CORS_ORIGINS: "http://localhost:${CASCADIA_DASHBOARD_PORT:-3000}"
       CASCADIA_PROXY_URL: "http://proxy:8080"
+      # Demo login (documented in the README). The dashboard-api seeds a
+      # pre-verified admin from these on boot, so there's no email round-trip —
+      # the keyless demo has no SMTP configured. Demo-only creds, not a secret.
+      # CASCADIA_DEMO=true is REQUIRED for seeding to happen at all: it hard-gates
+      # the known admin so it can never be created in a real deployment.
+      CASCADIA_DEMO: "true"
+      CASCADIA_SEED_ADMIN_EMAIL: "foo@bar.com"
+      CASCADIA_SEED_ADMIN_PASSWORD: "admin123"
 
   dashboard:
     image: cascadia-dashboard:${CASCADIA_TAG:-local}
@@ -144,8 +152,6 @@ services:
       - dashboard-api
     environment:
       CASCADIA_DASHBOARD_API_BASE: "http://dashboard-api:8080"
-      # Frictionless demo: no login/signup gate. (Self-host `up` keeps auth on.)
-      CASCADIA_AUTH_DISABLED: "true"
     ports:
       - "${CASCADIA_DASHBOARD_PORT:-3000}:3000"
 

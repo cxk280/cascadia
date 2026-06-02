@@ -27,7 +27,13 @@ npx cascadia-gateway demo
 
 That single command brings up the whole system in Docker and points it at a **built-in mock model** instead of a real provider — so it's completely free and works offline. It then sends a little sample traffic and prints a link. Open it:
 
-**→ [http://localhost:3000](http://localhost:3000)** *(no login — the demo turns the auth gate off)*
+**→ [http://localhost:3000](http://localhost:3000)** — log in with the demo account:
+
+| email | password |
+|---|---|
+| `foo@bar.com` | `admin123` |
+
+*(These are seeded only in the demo — hard-gated behind `CASCADIA_DEMO=true`, so this hardcoded login can never exist in a real deployment. A self-hosted instance uses normal email signup instead.)*
 
 **What you're watching.** Cascadia is trying to answer one question continuously: *"what's the cheapest model that still clears the quality bar — per request?"* In the dashboard you'll see traffic sorted into **clusters**, each routed to a cheap model and escalated to an expensive one only when needed. In the background a **judge** scores "would the expensive model have been meaningfully better?", and a **controller refits each cluster's threshold** from that signal. Leave the dashboard open for ~30 seconds and watch the **per-cluster thresholds** and the **Pareto chart** (`/pareto`) shift on their own — that's the closed feedback loop learning, live, with nobody touching a config file. (In the demo the "models" are a stub, so the *numbers* are synthetic — but every moving part is the real thing.)
 
