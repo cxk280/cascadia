@@ -4,11 +4,11 @@ The friendly front door to [Cascadia](https://github.com/cxk280/cascadia), the
 self-hostable LLM cascade gateway. Wraps Docker Compose so you don't have to.
 
 ```bash
-npx cascadia demo      # keyless, zero-cost demo of the live closed loop
-npx cascadia up        # self-host against real providers (BYO keys)
-npx cascadia down      # stop + wipe        (--live | --all)
-npx cascadia logs      # tail logs          (--live)
-npx cascadia doctor    # preflight checks
+npx cascadia-gateway demo      # keyless, zero-cost demo of the live closed loop
+npx cascadia-gateway up        # self-host against real providers (BYO keys)
+npx cascadia-gateway down      # stop + wipe        (--live | --all)
+npx cascadia-gateway logs      # tail logs          (--live)
+npx cascadia-gateway doctor    # preflight checks
 ```
 
 ## `demo` — see the product in one command
@@ -45,4 +45,4 @@ It uses, in order: `$CASCADIA_HOME` → a checkout it's running inside → a sha
 - Node ≥ 18
 - git (only for the cold `npx` clone path)
 
-Run `npx cascadia doctor` to verify all of the above.
+Run `npx cascadia-gateway doctor` to verify all of the above.
