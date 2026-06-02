@@ -20,6 +20,12 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM rust:1.88-bookworm AS cacher
 WORKDIR /build
 RUN cargo install cargo-chef --locked --version 0.1.68
+# Pin the SAME toolchain the builder uses. rust-toolchain.toml says
+# channel="stable", so without this the cacher cooks deps with the base image's
+# rustc (1.88) while the builder re-resolves "stable" (newer) and rebuilds every
+# dependency from scratch — silently defeating cargo-chef's cache. Copy it AFTER
+# the cargo-chef install so that (slow) install layer stays cacheable.
+COPY rust-toolchain.toml ./
 COPY --from=planner /build/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 

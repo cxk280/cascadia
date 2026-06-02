@@ -1,0 +1,33 @@
+{
+  "name": "cascadia",
+  "version": "0.0.1",
+  "description": "One-command launcher for Cascadia — the self-hostable LLM cascade gateway. `npx cascadia demo` brings up a keyless, zero-cost demo of the live cost/quality closed loop.",
+  "bin": {
+    "cascadia": "bin/cascadia.js"
+  },
+  "type": "commonjs",
+  "files": [
+    "bin",
+    "lib",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "llm",
+    "gateway",
+    "proxy",
+    "openai",
+    "cascade",
+    "cost-optimization",
+    "self-hosted"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cxk280/cascadia.git",
+    "directory": "cli"
+  },
+  "dependencies": {}
+}

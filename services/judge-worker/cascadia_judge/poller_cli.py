@@ -30,9 +30,11 @@ _PROVIDER_CLIENTS = {
 }
 
 
-def _build_client(provider: str, model: str) -> LLMClient:
+def _build_client(provider: str, model: str, base_url: str | None = None) -> LLMClient:
     """Construct one judge client, failing fast with a friendly message if its
-    API key isn't set."""
+    API key isn't set. `base_url` overrides the provider's default endpoint —
+    used to point the judge at a local mock/gateway (e.g. the keyless demo
+    stack, where every client talks to cascadia-mock-upstream)."""
     cls = _PROVIDER_CLIENTS[provider]
     if not os.environ.get(cls.API_KEY_ENV):
         print(
@@ -40,7 +42,7 @@ def _build_client(provider: str, model: str) -> LLMClient:
             file=sys.stderr,
         )
         sys.exit(2)
-    return cls(model=model)
+    return cls(model=model, base_url=base_url)
 
 
 def _parse_panel(spec: str) -> list[tuple[str, str]]:
@@ -84,6 +86,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--provider", default="openai", choices=sorted(_PROVIDER_CLIENTS))
     p.add_argument("--model", default="gpt-4o-mini")
     p.add_argument(
+        "--base-url",
+        default=os.environ.get("CASCADIA_JUDGE_BASE_URL"),
+        help=(
+            "Override the provider endpoint for every judge client (e.g. point "
+            "at a local mock/gateway). Defaults to $CASCADIA_JUDGE_BASE_URL. "
+            "The keyless demo sets this to the mock upstream so judging needs no keys."
+        ),
+    )
+    p.add_argument(
         "--panel",
         default=os.environ.get("CASCADIA_JUDGE_PANEL"),
         help=(
@@ -106,14 +117,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def _live_factory(provider: str, model: str):
+def _live_factory(provider: str, model: str, base_url: str | None = None):
     cls = _PROVIDER_CLIENTS[provider]
     if not os.environ.get(cls.API_KEY_ENV):
         print(f"missing {cls.API_KEY_ENV} env var", file=sys.stderr)
         sys.exit(2)
 
     def factory(_judge_name: str) -> LLMClient:
-        return cls(model=model)
+        return cls(model=model, base_url=base_url)
 
     return factory
 
@@ -131,10 +142,11 @@ async def _run(args: argparse.Namespace) -> int:
     orchestrator: JudgeOrchestrator | PanelOrchestrator
     if args.panel:
         members = _parse_panel(args.panel)
-        clients = [_build_client(provider, model) for provider, model in members]
+        clients = [_build_client(provider, model, args.base_url) for provider, model in members]
         logging.info(
-            "judge panel: %s",
+            "judge panel: %s%s",
             ", ".join(f"{p}:{m}" for p, m in members),
+            f" (base_url={args.base_url})" if args.base_url else "",
         )
         orchestrator = PanelOrchestrator(
             registry=REGISTRY, executor=executor, clients=clients
@@ -143,7 +155,7 @@ async def _run(args: argparse.Namespace) -> int:
         orchestrator = JudgeOrchestrator(
             registry=REGISTRY,
             executor=executor,
-            llm_factory=_live_factory(args.provider, args.model),
+            llm_factory=_live_factory(args.provider, args.model, args.base_url),
         )
     poller = Poller(
         storage=storage,
