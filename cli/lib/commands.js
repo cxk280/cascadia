@@ -140,23 +140,27 @@ async function cmdDemo(flags) {
   }
   ok("Proxy is up.");
 
-  if (flags.traffic !== 0) {
-    const n = flags.traffic || 60;
-    step(`Driving ${n} demo requests (keyless, free) to populate the dashboard…`);
+  // The dashboard-api seeds a representative Pareto frontier on first boot
+  // (CASCADIA_DEMO=true), so the demo is populated without driving traffic.
+  // Pushing live mock traffic is opt-in (--traffic N): it's the single-model
+  // path, which collapses the frontier to one corner, so it's off by default.
+  const n = flags.traffic ?? 0;
+  if (n > 0) {
+    step(`Driving ${n} live requests through the proxy (keyless, free)…`);
     const got = await driveTraffic(proxyBase, n);
-    if (got === 0) warn("No requests succeeded — the dashboard may look empty.");
-    else ok(`${got}/${n} requests served; shadow pairs are queued for the judge.`);
+    if (got === 0) warn("No requests succeeded.");
+    else ok(`${got}/${n} requests served.`);
   }
 
   log("");
   ok(c.bold("Cascadia demo is up — no API keys, no cost."));
-  log(`   Dashboard  →  ${c.cyan(`http://localhost:${dashPort}`)}  ${c.dim("(login gate disabled)")}`);
+  log(`   Dashboard  →  ${c.cyan(`http://localhost:${dashPort}`)}  ${c.dim("(log in: foo@bar.com / admin123)")}`);
+  log(`   Pareto     →  ${c.cyan(`http://localhost:${dashPort}/pareto`)}  ${c.dim("(cost/quality frontier + slider)")}`);
   log(`   Proxy      →  ${c.cyan(proxyBase)}  ${c.dim("(OpenAI-compatible at /v1)")}`);
   log("");
-  log(c.dim("   Watch the closed loop: the judge scores shadow pairs and the"));
-  log(c.dim("   controller refits thresholds every ~30s — the Pareto chart and"));
-  log(c.dim("   per-cluster thresholds shift on their own. Re-run traffic with:"));
-  log(c.dim("     cascadia demo --no-build"));
+  log(c.dim("   The dashboard is pre-populated with a representative frontier, and"));
+  log(c.dim("   the controller refits thresholds from it every ~30s. Push your own"));
+  log(c.dim("   live requests with:  cascadia demo --no-build --traffic 60"));
   log("");
   log(c.dim("   Stop + wipe:  cascadia down       Tail logs:  cascadia logs"));
   return 0;

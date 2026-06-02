@@ -9,10 +9,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
 import socket
 import uuid
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from importlib.metadata import PackageNotFoundError, version
 from typing import AsyncIterator
 from urllib.parse import urlparse
@@ -99,6 +100,98 @@ async def _seed_admin(auth_store: AuthStore) -> None:
         pass  # raced with another worker; fine
 
 
+# Per-cluster operating points for the demo's Pareto frontier. The live
+# single-model-pair mock can't produce a genuine cost/quality TRADE-OFF — its
+# "quality" (P(cheap >= expensive)) and "cost" (escalation rate) are the same
+# underlying signal, so one corner dominates and the frontier collapses to a
+# point. Real deployments get a spread because different clusters run different
+# model pairs whose quality and cost vary independently. We reproduce that here
+# by seeding clusters with DECOUPLED escalation + quality, chosen so cluster-0/1/2
+# form a rising efficient frontier and cluster-3 is a (Pareto-dominated) point
+# the controller would trim — exactly what the /pareto page is meant to show.
+# (cluster, cheap_model, expensive_model, n, escalation_pct, base_quality)
+_DEMO_FRONTIER = [
+    ("cluster-0", "openai/gpt-4o-mini", "openai/gpt-4o", 100, 20, 0.46),
+    ("cluster-1", "anthropic/claude-haiku-4-5", "anthropic/claude-sonnet-4-6", 100, 45, 0.53),
+    ("cluster-2", "openai/gpt-4o-mini", "anthropic/claude-sonnet-4-6", 100, 72, 0.62),
+    ("cluster-3", "anthropic/claude-haiku-4-5", "openai/gpt-4o", 100, 88, 0.55),
+]
+
+
+def _demo_seed_rows(now: datetime):
+    """Build (events, shadow_pairs, judge_scores) rows for the demo frontier.
+
+    Pure + deterministic (fixed RNG seed) so it's testable and reproducible.
+    Mirrors the column layout the real judge poller writes, including
+    shadow_pairs.ensemble_score (what /pareto and the controller read).
+    """
+    rng = random.Random(20260602)
+    events, shadows, judges = [], [], []
+    for cluster_id, cheap, expensive, n, esc_pct, base_q in _DEMO_FRONTIER:
+        for i in range(1, n + 1):
+            request_id = uuid.uuid4()
+            escalated = i <= esc_pct  # exactly esc_pct of n=100 escalate
+            final_model = expensive if escalated else cheap
+            occurred = now - timedelta(seconds=i + rng.randint(0, 30))
+            events.append((
+                request_id, occurred, "chat_completions", final_model.split("/", 1)[0],
+                final_model, 200, 1500 + rng.randint(0, 8000),
+                120 + rng.randint(0, 200), 60 + rng.randint(0, 100), cluster_id, escalated,
+            ))
+            pair_id = uuid.uuid4()
+            scores = []
+            for judge, variant, jprov in [
+                ("pairwise_preference_v1", "pairwise/v1", "anthropic"),
+                ("pairwise_preference_v1_swapped", "pairwise/v1#swapped", "anthropic"),
+                ("rubric_v1", "rubric/v1", "openai"),
+            ]:
+                s = max(0.0, min(1.0, base_q + (rng.random() - 0.5) * 0.08))
+                scores.append(s)
+                judges.append((uuid.uuid4(), pair_id, judge, variant, judge, jprov, s, 0.9, "demo-seed", 500))
+            ensemble = sum(scores) / len(scores)
+            shadows.append((
+                pair_id, request_id, occurred, cluster_id, f"demo prompt for {cluster_id}",
+                cheap, "cheap response", expensive, "expensive response", now, ensemble, 0.9,
+            ))
+    return events, shadows, judges
+
+
+async def _seed_demo_data(pool) -> None:
+    """Seed a representative Pareto frontier so the demo's /pareto page shows a
+    real curve + working slider. Demo-only (CASCADIA_DEMO=true) and idempotent
+    (skips if the events table already has rows). Never runs on a real deploy.
+    """
+    if (os.environ.get("CASCADIA_DEMO") or "").strip().lower() != "true":
+        return
+    log = logging.getLogger(__name__)
+    existing = await pool.fetchval("SELECT count(*) FROM events")
+    if existing:
+        return  # already has data (seeded or live) — leave it
+    events, shadows, judges = _demo_seed_rows(datetime.now(timezone.utc))
+    await pool.executemany(
+        "INSERT INTO events (request_id, occurred_at, route, provider, model, "
+        "upstream_status, elapsed_ms, prompt_tokens, completion_tokens, cluster_id, escalated) "
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+        events,
+    )
+    await pool.executemany(
+        "INSERT INTO shadow_pairs (pair_id, request_id, occurred_at, cluster_id, prompt, "
+        "cheap_model, cheap_response, expensive_model, expensive_response, judged_at, "
+        "ensemble_score, ensemble_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+        shadows,
+    )
+    await pool.executemany(
+        "INSERT INTO judge_scores (score_id, pair_id, judge_name, prompt_variant, model, "
+        "provider, score, confidence, prompt_hash, elapsed_ms) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+        judges,
+    )
+    log.warning(
+        "[seed] DEMO MODE: seeded %d events across %d clusters for the Pareto "
+        "frontier (demo data, not real traffic).",
+        len(events), len(_DEMO_FRONTIER),
+    )
+
+
 def create_app(
     store: Store | None = None,
     calibration_store: CalibrationStore | None = None,
@@ -140,10 +233,12 @@ def create_app(
             # separate ownership flag — it doesn't hold a pool of its own.
             if state["auth_store"] is None:
                 state["auth_store"] = AsyncpgAuthStore(asyncpg_store._pool)  # type: ignore[attr-defined]
+            # Demo-only: seed a representative Pareto frontier so /pareto shows a
+            # real curve on first boot. Gated on CASCADIA_DEMO + empty events.
+            await _seed_demo_data(asyncpg_store._pool)  # type: ignore[attr-defined]
         # Optional: seed a pre-verified admin from env. Used by the keyless demo
-        # so a fresh stack has known login creds (no email round-trip); also a
-        # convenient bootstrap for self-hosters. No-op unless both vars are set,
-        # and idempotent (skips if the account already exists).
+        # so a fresh stack has known login creds (no email round-trip). Hard-gated
+        # behind CASCADIA_DEMO=true; idempotent (skips if the account exists).
         if state["auth_store"] is not None:
             await _seed_admin(state["auth_store"])  # type: ignore[arg-type]
         try:

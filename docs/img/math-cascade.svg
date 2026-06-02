@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 220" font-family="ui-sans-serif, system-ui, sans-serif">
+  <rect x="0" y="0" width="780" height="220" rx="10" fill="#fafafa" stroke="#e5e7eb"/>
+  <text x="20" y="30" font-size="15" font-weight="700" fill="#111827">1 · The routing decision (cascade)</text>
+
+  <!-- request -->
+  <rect x="20" y="92" width="90" height="40" rx="6" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="65" y="117" font-size="13" fill="#1f2937" text-anchor="middle">request</text>
+  <line x1="110" y1="112" x2="150" y2="112" stroke="#6b7280" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- cheap model -->
+  <rect x="150" y="92" width="120" height="40" rx="6" fill="#eff6ff" stroke="#2563eb"/>
+  <text x="210" y="111" font-size="13" fill="#1e3a8a" text-anchor="middle">cheap model</text>
+  <text x="210" y="126" font-size="10" fill="#3b82f6" text-anchor="middle">+ confidence c</text>
+  <line x1="270" y1="112" x2="312" y2="112" stroke="#6b7280" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- decision diamond -->
+  <polygon points="375,80 440,112 375,144 310,112" fill="#ffffff" stroke="#374151"/>
+  <text x="375" y="109" font-size="13" font-weight="600" fill="#111827" text-anchor="middle">c ≥ τ ?</text>
+  <text x="375" y="125" font-size="9" fill="#6b7280" text-anchor="middle">cluster threshold</text>
+
+  <!-- yes branch (keep cheap) -->
+  <line x1="375" y1="80" x2="375" y2="46" stroke="#16a34a" stroke-width="2"/>
+  <line x1="375" y1="46" x2="560" y2="46" stroke="#16a34a" stroke-width="2" marker-end="url(#g)"/>
+  <text x="395" y="40" font-size="11" fill="#16a34a">yes → keep cheap (cheap, fast)</text>
+  <rect x="560" y="26" width="150" height="40" rx="6" fill="#f0fdf4" stroke="#16a34a"/>
+  <text x="635" y="51" font-size="13" fill="#166534" text-anchor="middle">return cheap ✓</text>
+
+  <!-- no branch (escalate) -->
+  <line x1="375" y1="144" x2="375" y2="178" stroke="#b45309" stroke-width="2"/>
+  <line x1="375" y1="178" x2="450" y2="178" stroke="#b45309" stroke-width="2" marker-end="url(#o)"/>
+  <text x="382" y="171" font-size="11" fill="#b45309">no → escalate</text>
+  <rect x="450" y="158" width="120" height="40" rx="6" fill="#fffbeb" stroke="#b45309"/>
+  <text x="510" y="183" font-size="13" fill="#92400e" text-anchor="middle">expensive model</text>
+  <line x1="570" y1="178" x2="612" y2="178" stroke="#b45309" stroke-width="2" marker-end="url(#o)"/>
+  <rect x="612" y="158" width="98" height="40" rx="6" fill="#fffbeb" stroke="#b45309"/>
+  <text x="661" y="183" font-size="13" fill="#92400e" text-anchor="middle">return $$</text>
+
+  <text x="20" y="205" font-size="11" fill="#6b7280">Lower τ ⇒ accept more cheap answers ⇒ less escalation ⇒ cheaper (but riskier). The loop below tunes τ for you.</text>
+
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#6b7280"/></marker>
+    <marker id="g" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#16a34a"/></marker>
+    <marker id="o" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#b45309"/></marker>
+  </defs>
+</svg>
