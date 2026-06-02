@@ -48,6 +48,56 @@ That single command brings up the whole system in Docker and points it at a **bu
 
 Prefer to read the launcher source or run from a clone? See [`cli/`](cli/README.md) and [Quick start](#quick-start) below.
 
+> The demo's Pareto page is pre-populated with **representative per-cluster operating points** so the frontier and slider are live on first boot (a single mock model pair can't produce a real cost/quality *trade-off* — see the ELI5 below). The frontier math, projection, and back-test all run for real on those points.
+
+## ELI5 — the math
+
+Four moving parts. Each is simple on its own; together they're the closed loop you watch in the demo.
+
+### 1 · Route cheap, escalate only when unsure
+
+![Cascade routing decision](docs/img/math-cascade.svg)
+
+Every request hits the **cheap** model first. We read a confidence number `c` (0–1) off its answer (hedging words, length, etc.). Keep the cheap answer if `c ≥ τ` (the cluster's threshold); otherwise re-ask the **expensive** model. **Lower `τ` → more cheap answers kept → cheaper** (and slightly riskier). Picking `τ` by hand is the part everyone gets wrong — so we learn it.
+
+### 2 · Score quality without a golden dataset
+
+For a fraction of traffic (`shadow_rate`) we *also* ask the expensive model in the background, and a **judge** scores one question: how often is the cheap answer **at least as good** as the expensive one?
+
+```
+q  =  P(cheap ≥ expensive)   ∈ [0, 1]
+```
+
+LLM judges are biased toward whichever answer is shown first, so we ask **twice with the answers swapped** and average it out:
+
+```
+q  =  ( q(A,B)  +  (1 − q(B,A)) ) / 2
+```
+
+No labeled dataset, no separate eval rig — the signal falls out of serving traffic.
+
+### 3 · Tune the threshold automatically
+
+![Closed feedback loop](docs/img/math-closed-loop.svg)
+
+Per cluster, compare the mean judge score `q̄` to a target `t` (default 0.5):
+
+```
+q̄ > t + margin   (cheap is winning)  →  τ −= step   # route more cheap, save money
+q̄ < t − margin   (cheap is losing)   →  τ += step   # escalate more, protect quality
+otherwise        →  hold              ;  clamp τ ∈ [0.3, 0.95]
+```
+
+Run that every ~30s. Nobody edits a config file — the controller publishes a new policy and the proxy hot-reloads it.
+
+### 4 · Read the cost / quality frontier
+
+![Pareto frontier and slider](docs/img/math-pareto.svg)
+
+Plot each cluster as a point: **x = escalation rate** (your cost proxy), **y = mean judge quality**. The **efficient frontier** is the set of points nothing beats on *both* axes — the honest menu of "best you can do." The slider answers *"I want X% of best-tier quality — what will it cost?"* by interpolating along that curve, and a **leave-one-out back-test** reports how often the fitted curve predicts a held-out cluster's real cost within its 95% confidence interval.
+
+**That's the whole system: route → measure → tune → visualize, on a loop.**
+
 ## What makes Cascadia different
 
 Most gateways (LiteLLM, Portkey, OpenRouter) route on rules a human wrote and never tell you whether the rules are right. Cascadia *learns* the rules from a closed loop. They ask *"where does this request go?"*; Cascadia asks *"what's the cheapest model that still meets quality — and how do we know?"*

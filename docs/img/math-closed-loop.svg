@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 300" font-family="ui-sans-serif, system-ui, sans-serif">
+  <rect x="0" y="0" width="780" height="300" rx="10" fill="#fafafa" stroke="#e5e7eb"/>
+  <text x="20" y="30" font-size="15" font-weight="700" fill="#111827">2 · The learning loop (no human in it)</text>
+
+  <!-- proxy -->
+  <rect x="40" y="120" width="140" height="56" rx="8" fill="#eff6ff" stroke="#2563eb"/>
+  <text x="110" y="143" font-size="13" font-weight="600" fill="#1e3a8a" text-anchor="middle">proxy</text>
+  <text x="110" y="160" font-size="10" fill="#3b82f6" text-anchor="middle">routes by threshold τ</text>
+
+  <!-- shadow pair -->
+  <rect x="250" y="60" width="150" height="56" rx="8" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="325" y="83" font-size="13" font-weight="600" fill="#1f2937" text-anchor="middle">shadow pair</text>
+  <text x="325" y="100" font-size="10" fill="#6b7280" text-anchor="middle">cheap vs. expensive</text>
+
+  <!-- judge -->
+  <rect x="470" y="120" width="150" height="56" rx="8" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="545" y="143" font-size="13" font-weight="600" fill="#1f2937" text-anchor="middle">judge ensemble</text>
+  <text x="545" y="160" font-size="10" fill="#6b7280" text-anchor="middle">score q = P(cheap ≥ exp)</text>
+
+  <!-- controller -->
+  <rect x="250" y="190" width="150" height="56" rx="8" fill="#f0fdf4" stroke="#16a34a"/>
+  <text x="325" y="213" font-size="13" font-weight="600" fill="#166534" text-anchor="middle">controller</text>
+  <text x="325" y="230" font-size="10" fill="#16a34a" text-anchor="middle">refit τ toward target</text>
+
+  <!-- arrows around the loop -->
+  <line x1="180" y1="138" x2="248" y2="98" stroke="#6b7280" stroke-width="2" marker-end="url(#a)"/>
+  <text x="178" y="112" font-size="10" fill="#6b7280">mirror a fraction</text>
+  <line x1="400" y1="92" x2="500" y2="118" stroke="#6b7280" stroke-width="2" marker-end="url(#a)"/>
+  <text x="406" y="100" font-size="10" fill="#6b7280">ask the judge</text>
+  <line x1="520" y1="176" x2="392" y2="206" stroke="#6b7280" stroke-width="2" marker-end="url(#a)"/>
+  <text x="430" y="205" font-size="10" fill="#6b7280">per-cluster q̄</text>
+  <line x1="250" y1="210" x2="150" y2="178" stroke="#16a34a" stroke-width="2" marker-end="url(#g)"/>
+  <text x="120" y="205" font-size="10" fill="#16a34a">new τ (hot-reload)</text>
+
+  <!-- rule box -->
+  <rect x="470" y="196" width="290" height="74" rx="8" fill="#ffffff" stroke="#d1d5db"/>
+  <text x="485" y="216" font-size="11" font-weight="600" fill="#111827">refit rule (per cluster, every interval):</text>
+  <text x="485" y="234" font-size="11" fill="#166534" font-family="ui-monospace, monospace">q̄ &gt; t+m → τ −= step   (cheap winning → cheaper)</text>
+  <text x="485" y="250" font-size="11" fill="#b45309" font-family="ui-monospace, monospace">q̄ &lt; t−m → τ += step   (cheap losing → safer)</text>
+  <text x="485" y="266" font-size="11" fill="#6b7280" font-family="ui-monospace, monospace">else: hold.  clamp τ ∈ [0.3, 0.95]</text>
+
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#6b7280"/></marker>
+    <marker id="g" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#16a34a"/></marker>
+  </defs>
+</svg>
