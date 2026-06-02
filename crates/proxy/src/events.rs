@@ -128,7 +128,17 @@ pub async fn init(database_url: &str) -> anyhow::Result<(EventSender, PgPool)> {
                 anyhow::Error::from(e).context("running sqlx migrations")
             }
         })?;
-    tracing::info!("postgres migrations applied");
+    // Log the highest applied migration version. This makes a stale/cached
+    // deploy *loud*: if a build didn't actually rebuild after a migration was
+    // added (e.g. a platform served a cached image), this number lags the
+    // migrations/ dir and the mismatch is obvious in the boot logs instead of
+    // silently missing a table. See PLAN.md §9 (2026-06-01, postgres policy).
+    let latest_applied: Option<i64> =
+        sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(None);
+    tracing::info!(latest_applied_migration = ?latest_applied, "postgres migrations applied");
 
     let (tx, rx) = mpsc::channel::<LogEntry>(2048);
     let writer_pool = pool.clone();
