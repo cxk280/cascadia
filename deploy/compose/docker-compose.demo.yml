@@ -1,0 +1,153 @@
+# Keyless, zero-cost Cascadia demo — the substrate behind `npx cascadia demo`.
+#
+# Everything runs in Docker; the only host prerequisites are Docker + (for the
+# launcher) Node. Both the proxy's cascade tiers AND the judge-worker point at
+# `mock-upstream`, an instant OpenAI-shaped stub — so there are NO API keys and
+# NO provider cost. The closed loop is real: the controller refits thresholds
+# from judged shadow pairs and the proxy hot-reloads them via the Postgres
+# policy store (the same path that runs in prod — no shared volume).
+#
+# Usage (the launcher wraps this):
+#   docker compose -f deploy/compose/docker-compose.demo.yml up -d --build
+#   open http://localhost:3000          # dashboard, login gate disabled
+#   docker compose -f deploy/compose/docker-compose.demo.yml down -v
+#
+# Images build locally from source on first run (cached after). Override the
+# tag via CASCADIA_TAG to pull prebuilt images instead; override published
+# ports via CASCADIA_PROXY_PORT / CASCADIA_DASHBOARD_PORT if 8080/3000 are busy.
+
+x-db: &db "postgres://cascadia:cascadia@postgres:5432/cascadia"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cascadia-demo-postgres
+    environment:
+      POSTGRES_USER: cascadia
+      POSTGRES_PASSWORD: cascadia
+      POSTGRES_DB: cascadia
+    # Not published to the host: every service reaches it as `postgres:5432`
+    # over the compose network, so there's nothing to collide with a local PG.
+    volumes:
+      - cascadia-demo-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cascadia -d cascadia"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mock-upstream:
+    image: cascadia-mock-upstream:${CASCADIA_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/mock-upstream.Dockerfile
+    container_name: cascadia-demo-mock-upstream
+    environment:
+      CASCADIA_MOCK_LISTEN_ADDR: "0.0.0.0:18081"
+
+  proxy:
+    image: cascadia-proxy:${CASCADIA_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/proxy.Dockerfile
+    container_name: cascadia-demo-proxy
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CASCADIA_LISTEN_ADDR: "0.0.0.0:8080"
+      CASCADIA_DATABASE_URL: *db
+      # Cascade tiers both resolve to the mock; any key value is accepted.
+      CASCADIA_OPENAI_API_KEY: "mock"
+      CASCADIA_OPENAI_BASE_URL: "http://mock-upstream:18081"
+      CASCADIA_CHEAP_MODEL: "openai/mock-cheap"
+      CASCADIA_EXPENSIVE_MODEL: "openai/mock-expensive"
+      CASCADIA_CLUSTER_BUCKETS: "4"
+      CASCADIA_LOG_JSON: "false"
+      # Closed loop via Postgres (no rendezvous volume). The proxy seeds
+      # policy_store row 1 from this JSON on first boot, then polls for updates
+      # the controller publishes. 4 clusters, mock models, varied thresholds.
+      CASCADIA_POLICY_SOURCE: "postgres"
+      CASCADIA_POLICY_JSON: >-
+        {"default_cluster":"cluster-0","cluster_buckets":4,"version":"demo-mock-v1",
+        "clusters":{
+        "cluster-0":{"cluster_id":"cluster-0","cheap_model":"openai/mock-cheap","expensive_model":"openai/mock-expensive","threshold":0.50,"shadow_rate":0.5},
+        "cluster-1":{"cluster_id":"cluster-1","cheap_model":"openai/mock-cheap","expensive_model":"openai/mock-expensive","threshold":0.60,"shadow_rate":0.5},
+        "cluster-2":{"cluster_id":"cluster-2","cheap_model":"openai/mock-cheap","expensive_model":"openai/mock-expensive","threshold":0.70,"shadow_rate":0.5},
+        "cluster-3":{"cluster_id":"cluster-3","cheap_model":"openai/mock-cheap","expensive_model":"openai/mock-expensive","threshold":0.55,"shadow_rate":0.5}}}
+    ports:
+      - "${CASCADIA_PROXY_PORT:-8080}:8080"
+
+  judge-worker:
+    image: cascadia-judge-worker:${CASCADIA_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/judge-worker.Dockerfile
+    container_name: cascadia-demo-judge-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CASCADIA_DATABASE_URL: *db
+      # Dummy key satisfies the client's key check; --base-url points the
+      # openai-compatible judge at the mock, which returns JSON verdicts.
+      OPENAI_API_KEY: "mock"
+    command:
+      - "--provider"
+      - "openai"
+      - "--model"
+      - "mock-judge"
+      - "--base-url"
+      - "http://mock-upstream:18081/v1"
+      - "--batch-size"
+      - "4"
+
+  policy-controller:
+    image: cascadia-policy-controller:${CASCADIA_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/policy-controller.Dockerfile
+    container_name: cascadia-demo-policy-controller
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CASCADIA_DATABASE_URL: *db
+      CASCADIA_POLICY_SOURCE: "postgres"
+      # Demo-friendly knobs so thresholds visibly move with light traffic.
+      CASCADIA_REFIT_MIN_SAMPLE_SIZE: "5"
+      CASCADIA_REFIT_STEP: "0.05"
+      CASCADIA_REFIT_INTERVAL_SEC: "30"
+      CASCADIA_LOOKBACK_MINUTES: "720"
+
+  dashboard-api:
+    image: cascadia-dashboard-api:${CASCADIA_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/dashboard-api.Dockerfile
+    container_name: cascadia-demo-dashboard-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CASCADIA_DATABASE_URL: *db
+      CASCADIA_DASHBOARD_CORS_ORIGINS: "http://localhost:${CASCADIA_DASHBOARD_PORT:-3000}"
+      CASCADIA_PROXY_URL: "http://proxy:8080"
+
+  dashboard:
+    image: cascadia-dashboard:${CASCADIA_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/dashboard.Dockerfile
+    container_name: cascadia-demo-dashboard
+    depends_on:
+      - dashboard-api
+    environment:
+      CASCADIA_DASHBOARD_API_BASE: "http://dashboard-api:8080"
+      # Frictionless demo: no login/signup gate. (Self-host `up` keeps auth on.)
+      CASCADIA_AUTH_DISABLED: "true"
+    ports:
+      - "${CASCADIA_DASHBOARD_PORT:-3000}:3000"
+
+volumes:
+  cascadia-demo-postgres:

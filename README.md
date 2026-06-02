@@ -17,6 +17,31 @@ The output is a **cost/quality Pareto frontier** per cluster — the curve of be
 
 > **MLOps stack, end-to-end:** Rust hot path · Python judge + policy-controller · Postgres event log · Next.js operator dashboard · FastAPI read-side · Helm · Prometheus + OpenTelemetry.
 
+## Try it: the keyless demo (one command)
+
+No API key. No account. No sign-up. No cost. If you have **[Docker](https://docs.docker.com/get-docker/)** (running) and **[Node](https://nodejs.org/) 18+**, that's everything you need:
+
+```bash
+npx cascadia demo
+```
+
+That single command brings up the whole system in Docker and points it at a **built-in mock model** instead of a real provider — so it's completely free and works offline. It then sends a little sample traffic and prints a link. Open it:
+
+**→ [http://localhost:3000](http://localhost:3000)** *(no login — the demo turns the auth gate off)*
+
+**What you're watching.** Cascadia is trying to answer one question continuously: *"what's the cheapest model that still clears the quality bar — per request?"* In the dashboard you'll see traffic sorted into **clusters**, each routed to a cheap model and escalated to an expensive one only when needed. In the background a **judge** scores "would the expensive model have been meaningfully better?", and a **controller refits each cluster's threshold** from that signal. Leave the dashboard open for ~30 seconds and watch the **per-cluster thresholds** and the **Pareto chart** (`/pareto`) shift on their own — that's the closed feedback loop learning, live, with nobody touching a config file. (In the demo the "models" are a stub, so the *numbers* are synthetic — but every moving part is the real thing.)
+
+**That's the whole product in 30 seconds:** a self-tuning cost/quality loop you can watch work.
+
+| | |
+|---|---|
+| First run is slow? | It compiles the services the first time (a few minutes); every run after is instant. |
+| Something off? | `npx cascadia doctor` checks Docker, ports, and the rest. |
+| Done? | `npx cascadia down` stops everything and wipes the demo's data. |
+| Want real models? | `npx cascadia up` asks for your OpenAI + Anthropic keys and runs the same stack live (this spends real API budget). |
+
+Prefer to read the launcher source or run from a clone? See [`cli/`](cli/README.md) and [Quick start](#quick-start) below.
+
 ## What makes Cascadia different
 
 Most gateways (LiteLLM, Portkey, OpenRouter) route on rules a human wrote and never tell you whether the rules are right. Cascadia *learns* the rules from a closed loop. They ask *"where does this request go?"*; Cascadia asks *"what's the cheapest model that still meets quality — and how do we know?"*
@@ -34,6 +59,10 @@ Three things competitors structurally don't do: **counterfactual shadow routing*
 
 ## Quick start
 
+The fastest path is the keyless `npx cascadia demo` above — only Docker + Node, no keys, no cost. `npx cascadia up` runs the same stack against real providers (it prompts for your keys). Both wrap Docker Compose; the launcher lives in [`cli/`](cli/README.md).
+
+**From source (contributors).** If you have the Rust + Python/uv + Node toolchain and want host-process iteration instead of containers:
+
 ```bash
 ./scripts/quickstart.sh
 ```
@@ -42,7 +71,7 @@ One command: brings up Postgres, writes a starter policy, builds and starts the 
 
 **Live data, standalone (real providers, real cost).** `CASCADIA_LIVE=1 ./scripts/quickstart.sh` runs the same stack against a real cascade instead of the mock — Anthropic `claude-haiku-4-5` → `claude-sonnet-4-6` by default — with real traffic, a real multi-model **judge panel** scoring shadow pairs live, and the controller refitting on a loop. Needs `ANTHROPIC_API_KEY` (cascade) and `OPENAI_API_KEY` (cross-family judge — the panel must be a different family than the cascade). Live mode **clears the synthetic seed first** so the dashboard shows only live data; add **`QUICKSTART_TRAFFIC=0`** to start from an empty dashboard and drive your own traffic (handy on camera — watch the KPIs and Pareto chart fill in real time). Signup is **double opt-in** — it emails a confirmation link you must click to finish (with no SMTP configured, the link is printed to `/tmp/cascadia-dashboard-api.log`); the first confirmed account becomes **admin**, and calibration is admin/reviewer-only (operators consume the calibrated judge, they don't label). The same mode becomes a LiteLLM-stacked demo later by pointing `CASCADIA_OPENAI_BASE_URL` at LiteLLM — no code change.
 
-**Deploying instead?** Kubernetes → [`deploy/helm/cascadia/`](deploy/helm/cascadia/README.md). Full container stack → `deploy/compose/docker-compose.full.yml`. Railway/Render/Fly → [PLAN.md §9 (2026-05-20)](PLAN.md).
+**Deploying instead?** Kubernetes → [`deploy/helm/cascadia/`](deploy/helm/cascadia/README.md). Container stacks → `deploy/compose/docker-compose.demo.yml` (keyless demo, what `npx cascadia demo` runs) and `docker-compose.full.yml` (real providers). Railway/Render/Fly → [PLAN.md §9 (2026-05-20)](PLAN.md).
 
 ## Accounts & email confirmation
 

@@ -1,0 +1,281 @@
+"use strict";
+
+const readline = require("node:readline");
+const {
+  c,
+  log,
+  step,
+  ok,
+  warn,
+  fail,
+  commandExists,
+  portInUse,
+  pickPort,
+  waitForHttp,
+} = require("./util");
+const { resolveSource, DEFAULT_REPO } = require("./source");
+const {
+  dockerReady,
+  compose,
+  DEMO_FILE,
+  LIVE_FILE,
+  DEMO_PROJECT,
+  LIVE_PROJECT,
+} = require("./docker");
+
+// --- demo traffic -----------------------------------------------------------
+// A SMALL, fixed set of prompts on purpose. Cluster assignment is a hash of the
+// prompt, so a handful of distinct prompts means each cluster is dominated by
+// ONE prompt — and therefore one behaviour. We use only two clear modes:
+//   • confident → the mock answers "Yes." → judge scores the cheap tier high
+//     (~0.67, cheap ≈ expensive) → controller LOWERS that cluster's threshold.
+//   • "uncertain" → the mock hedges → judge scores the cheap tier low (~0.25)
+//     → controller RAISES that cluster's threshold.
+// That gives clusters whose mean judge score lands clearly outside the refit
+// dead zone (target ± margin), in OPPOSITE directions — so thresholds visibly
+// move. (A broadly *varied* prompt mix averages every cluster back to ~0.5 and
+// nothing moves — the controller working as designed, just an unwatchable demo.)
+const PROMPTS = [
+  // Confident — cheap tier wins → threshold drifts down (more cheap routing).
+  "Answer in one word: what is 2 + 2?",
+  "One word only — what is the capital of France?",
+  "Reply yes or no: is the sky blue on a clear day?",
+  "In a single word, what color is grass?",
+  // Uncertain — cheap tier hedges and loses → threshold drifts up.
+  "I'm uncertain about how DNS resolution works — can you explain?",
+  "I'm uncertain about the CAP theorem — walk me through the tradeoffs.",
+  "I'm uncertain how OAuth refresh tokens are rotated — help?",
+  "I'm uncertain about TCP slow start — what's going on there?",
+];
+
+async function driveTraffic(proxyBase, n) {
+  const url = `${proxyBase.replace(/\/$/, "")}/v1/chat/completions`;
+  let okCount = 0;
+  for (let i = 0; i < n; i++) {
+    const prompt = PROMPTS[i % PROMPTS.length];
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "auto",
+          messages: [{ role: "user", content: prompt }],
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (res.ok) okCount++;
+      await res.arrayBuffer().catch(() => {});
+    } catch {
+      /* keep going; a few failures are fine */
+    }
+    if ((i + 1) % 10 === 0) process.stdout.write(c.dim(`  …${i + 1}/${n}\n`));
+  }
+  return okCount;
+}
+
+// --- small prompt helpers ---------------------------------------------------
+function promptLine(query) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(query, (a) => {
+      rl.close();
+      resolve(a.trim());
+    });
+  });
+}
+
+// Read a secret without echoing it to the terminal (masks with '*').
+function promptHidden(query) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: true,
+    });
+    rl.stdoutMuted = true;
+    rl._writeToOutput = function (s) {
+      if (!rl.stdoutMuted) return rl.output.write(s);
+      rl.output.write(s.includes("\n") ? "\n" : "*");
+    };
+    process.stdout.write(query);
+    rl.question("", (a) => {
+      rl.close();
+      process.stdout.write("\n");
+      resolve(a.trim());
+    });
+  });
+}
+
+// --- commands ---------------------------------------------------------------
+
+async function cmdDemo(flags) {
+  if (!dockerReady()) return 1;
+  const src = await resolveSource();
+
+  const proxyPort = await pickPort(Number(process.env.CASCADIA_PROXY_PORT) || 8080);
+  const dashPort = await pickPort(Number(process.env.CASCADIA_DASHBOARD_PORT) || 3000);
+  const env = {
+    ...process.env,
+    CASCADIA_PROXY_PORT: String(proxyPort),
+    CASCADIA_DASHBOARD_PORT: String(dashPort),
+  };
+
+  const upArgs = ["up", "-d"];
+  if (flags.build !== false) {
+    upArgs.push("--build");
+    log(c.dim("First run builds images from source (a few minutes); cached afterward."));
+  }
+  step("Starting the demo stack…");
+  const code = await compose(src, DEMO_FILE, DEMO_PROJECT, upArgs, { env });
+  if (code !== 0) {
+    fail("docker compose up failed.");
+    return code;
+  }
+
+  step(`Waiting for the proxy on :${proxyPort} …`);
+  const proxyBase = `http://localhost:${proxyPort}`;
+  if (!(await waitForHttp(`${proxyBase}/readyz`))) {
+    warn("Proxy didn't become ready in time. Check logs: cascadia logs");
+    return 1;
+  }
+  ok("Proxy is up.");
+
+  if (flags.traffic !== 0) {
+    const n = flags.traffic || 60;
+    step(`Driving ${n} demo requests (keyless, free) to populate the dashboard…`);
+    const got = await driveTraffic(proxyBase, n);
+    if (got === 0) warn("No requests succeeded — the dashboard may look empty.");
+    else ok(`${got}/${n} requests served; shadow pairs are queued for the judge.`);
+  }
+
+  log("");
+  ok(c.bold("Cascadia demo is up — no API keys, no cost."));
+  log(`   Dashboard  →  ${c.cyan(`http://localhost:${dashPort}`)}  ${c.dim("(login gate disabled)")}`);
+  log(`   Proxy      →  ${c.cyan(proxyBase)}  ${c.dim("(OpenAI-compatible at /v1)")}`);
+  log("");
+  log(c.dim("   Watch the closed loop: the judge scores shadow pairs and the"));
+  log(c.dim("   controller refits thresholds every ~30s — the Pareto chart and"));
+  log(c.dim("   per-cluster thresholds shift on their own. Re-run traffic with:"));
+  log(c.dim("     cascadia demo --no-build"));
+  log("");
+  log(c.dim("   Stop + wipe:  cascadia down       Tail logs:  cascadia logs"));
+  return 0;
+}
+
+async function cmdUp(flags) {
+  if (!dockerReady()) return 1;
+  const src = await resolveSource();
+
+  log(c.bold("Self-host Cascadia against real providers."));
+  log(c.dim("This spends real API budget. Keys are passed to the containers in-memory"));
+  log(c.dim("(not written to disk). Export OPENAI_API_KEY / ANTHROPIC_API_KEY to skip this."));
+  log("");
+
+  let openaiKey = process.env.OPENAI_API_KEY;
+  let anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (!openaiKey) openaiKey = await promptHidden("OpenAI API key (cascade tiers): ");
+  if (!anthropicKey)
+    anthropicKey = await promptHidden("Anthropic API key (cross-family judge): ");
+  if (!openaiKey || !anthropicKey) {
+    fail("Both keys are required for the live stack (OpenAI cascade + Anthropic judge).");
+    return 2;
+  }
+
+  const env = {
+    ...process.env,
+    OPENAI_API_KEY: openaiKey,
+    ANTHROPIC_API_KEY: anthropicKey,
+    CASCADIA_CALIBRATE_PASS: process.env.CASCADIA_CALIBRATE_PASS || "localdev",
+  };
+
+  const upArgs = ["up", "-d"];
+  if (flags.build !== false) upArgs.push("--build");
+  step("Starting the live stack…");
+  const code = await compose(src, LIVE_FILE, LIVE_PROJECT, upArgs, { env });
+  if (code !== 0) {
+    fail("docker compose up failed.");
+    return code;
+  }
+
+  log("");
+  ok(c.bold("Cascadia (live) is up."));
+  log(`   Dashboard  →  ${c.cyan("http://localhost:3000")}  ${c.dim("(first visit → /signup; first account is admin)")}`);
+  log(`   Proxy      →  ${c.cyan("http://localhost:18080")}  ${c.dim("(OpenAI-compatible at /v1)")}`);
+  log("");
+  log(c.dim("   Send your own traffic through the proxy; the judge panel + controller"));
+  log(c.dim("   run the closed loop live. Stop + wipe: cascadia down --live"));
+  return 0;
+}
+
+async function cmdDown(flags) {
+  if (!dockerReady()) return 1;
+  const src = await resolveSource();
+  const live = flags.live || flags.all;
+  const demo = !flags.live || flags.all;
+  let code = 0;
+  if (demo) {
+    step("Tearing down the demo stack (and its volume)…");
+    code = (await compose(src, DEMO_FILE, DEMO_PROJECT, ["down", "-v"])) || code;
+  }
+  if (live) {
+    step("Tearing down the live stack (and its volume)…");
+    code = (await compose(src, LIVE_FILE, LIVE_PROJECT, ["down", "-v"])) || code;
+  }
+  if (code === 0) ok("Stopped.");
+  return code;
+}
+
+async function cmdLogs(flags, positional) {
+  if (!dockerReady()) return 1;
+  const src = await resolveSource();
+  const file = flags.live ? LIVE_FILE : DEMO_FILE;
+  const project = flags.live ? LIVE_PROJECT : DEMO_PROJECT;
+  const args = ["logs", "-f", "--tail", "60", ...positional];
+  return compose(src, file, project, args);
+}
+
+async function cmdDoctor() {
+  let allGood = true;
+  const check = (label, good, hint) => {
+    if (good) ok(label);
+    else {
+      fail(`${label}${hint ? ` — ${hint}` : ""}`);
+      allGood = false;
+    }
+  };
+
+  check("Node >= 18", Number(process.versions.node.split(".")[0]) >= 18, "upgrade Node");
+  check("Docker installed", commandExists("docker"), "https://docs.docker.com/get-docker/");
+  check(
+    "Docker daemon running",
+    commandExists("docker") && require("./util").capture("docker", ["info"]).code === 0,
+    "start Docker"
+  );
+  check(
+    "docker compose v2",
+    commandExists("docker", ["compose", "version"]),
+    "install the Compose plugin"
+  );
+  check("git available", commandExists("git"), "needed only for cold `npx cascadia`");
+
+  for (const p of [8080, 3000]) {
+    const used = await portInUse(p);
+    if (used) warn(`port ${p} is in use — the launcher will fall back to the next free port`);
+    else ok(`port ${p} free`);
+  }
+
+  try {
+    const src = await resolveSource();
+    ok(`Cascadia source: ${src}`);
+  } catch (e) {
+    fail(`Cascadia source: ${e.message}`);
+    log(c.dim(`   (cold runs clone from ${DEFAULT_REPO}; set CASCADIA_REPO/CASCADIA_HOME to override)`));
+    allGood = false;
+  }
+
+  log("");
+  log(allGood ? c.green("All good — `cascadia demo` should just work.") : c.yellow("Some checks failed (see above)."));
+  return allGood ? 0 : 1;
+}
+
+module.exports = { cmdDemo, cmdUp, cmdDown, cmdLogs, cmdDoctor };

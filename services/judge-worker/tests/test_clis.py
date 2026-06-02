@@ -171,3 +171,26 @@ def test_poller_cli_missing_db_url_exits(
         main()
     except SystemExit:
         pass
+
+
+def test_poller_cli_base_url_defaults_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CASCADIA_JUDGE_BASE_URL", "http://mock-upstream:18081/v1")
+    from cascadia_judge.poller_cli import _parse_args
+    assert _parse_args([]).base_url == "http://mock-upstream:18081/v1"
+    # An explicit flag wins over the env default.
+    assert _parse_args(["--base-url", "http://other/v1"]).base_url == "http://other/v1"
+
+
+def test_poller_cli_base_url_threads_into_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The keyless demo path: a dummy key + a mock base-url must produce a client
+    # pointed at the mock (no real provider endpoint).
+    monkeypatch.setenv("OPENAI_API_KEY", "mock")
+    from cascadia_judge.poller_cli import _build_client, _live_factory
+
+    direct = _build_client("openai", "mock-judge", "http://mock-upstream:18081/v1")
+    assert direct._base_url == "http://mock-upstream:18081/v1"
+
+    via_factory = _live_factory("openai", "mock-judge", "http://mock-upstream:18081/v1")(
+        "pairwise_preference_v1"
+    )
+    assert via_factory._base_url == "http://mock-upstream:18081/v1"
