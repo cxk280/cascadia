@@ -3,9 +3,7 @@ and a per-pair position-bias summary.
 
 We roll Kendall's τ-b by hand rather than depending on scipy. The
 calibration set is small (~hundreds of pairs); O(n²) is fine and shipping
-without scipy keeps the judge-worker dependency surface minimal (per
-SOLID.md §8: "no provider SDK imports outside the LLM adapter layer" —
-similar spirit applies to keeping the runtime lean).
+without scipy keeps the judge-worker dependency surface minimal.
 
 Definitions used:
 

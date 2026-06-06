@@ -3,8 +3,7 @@
 Substitution surface is the `Store` Protocol — `AsyncpgStore` is the
 production adapter, `InMemoryStore` is the test fake. Following the same
 pattern as `services/judge-worker/cascadia_judge/storage/base.py` so the
-codebase stays consistent (Phase 1 SOLID Agent Swarms decision in
-`SOLID.md` applied to a different service).
+codebase stays consistent.
 """
 
 from __future__ import annotations
