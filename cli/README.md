@@ -25,8 +25,10 @@ refits per-cluster thresholds every ~30s, which the proxy hot-reloads via its
 Postgres policy store. Watch the Pareto chart and thresholds move on their own.
 
 First run **pulls six prebuilt images** from `ghcr.io/cxk280` (no git, no compile),
-then starts instantly; cached after. Override the source with `CASCADIA_REGISTRY`
-(registry prefix, trailing slash) and `CASCADIA_TAG`.
+then starts instantly; cached after. The image tag is **tied to this package's
+version** — `cascadia-gateway@x.y.z` pulls `vx.y.z` images — so you always know
+exactly which images a launcher version runs. Override the source with
+`CASCADIA_REGISTRY` (registry prefix, trailing slash) and `CASCADIA_TAG`.
 
 Flags:
 - `--build` — build images from source instead of pulling (needs git + a checkout).

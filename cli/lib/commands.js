@@ -27,11 +27,13 @@ const {
 
 // Prebuilt demo images live in GHCR under the repo owner's namespace. The
 // default `cascadia demo` PULLS these (no git, no local build); `--build`
-// builds from source instead. PUBLISHED_IMAGE_TAG is bumped in lockstep with
-// the image release published by CI (see .circleci publish-images); override at
-// runtime with CASCADIA_TAG / CASCADIA_REGISTRY.
+// builds from source instead. The image tag is TIED to this package's version:
+// launcher x.y.z pulls images tagged vx.y.z. So every npm release must be cut
+// from a matching `vx.y.z` git tag (CI builds those images, and a CI guard
+// enforces tag == package version). Override at runtime with CASCADIA_TAG /
+// CASCADIA_REGISTRY.
 const DEFAULT_REGISTRY = "ghcr.io/cxk280/";
-const PUBLISHED_IMAGE_TAG = "v0.1.0";
+const PUBLISHED_IMAGE_TAG = `v${require("../package.json").version}`;
 
 // --- demo traffic -----------------------------------------------------------
 // A SMALL, fixed set of prompts on purpose. Cluster assignment is a hash of the

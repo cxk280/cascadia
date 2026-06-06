@@ -39,7 +39,7 @@ ${c.bold("Commands:")}
 
 ${c.bold("Environment:")}
   CASCADIA_REGISTRY  image registry prefix to pull from (default ghcr.io/cxk280/)
-  CASCADIA_TAG       image tag to pull (default: the launcher's pinned release)
+  CASCADIA_TAG       image tag to pull (default: v<this launcher's version>)
   CASCADIA_HOME      path to a Cascadia checkout (for --build / up)
   CASCADIA_REPO      git URL to clone on a cold --build / up
   CASCADIA_PROXY_PORT / CASCADIA_DASHBOARD_PORT   override published ports

@@ -241,6 +241,17 @@ Originally scoped as a separate phase (PLAN.md §9 "open issues" 2026-05-19). Fo
 
 Newest first. Decisions are append-only; supersedes are noted by linking forward.
 
+### 2026-06-06 (later) — Tie the demo image tag to the launcher version
+
+Refines the [2026-06-06 prebuilt-images entry](#2026-06-06--demo-pulls-prebuilt-ghcr-images-by-default-flip-the-2026-06-02-build-locally-choice). That entry pinned the pulled image tag via a hand-maintained `PUBLISHED_IMAGE_TAG` constant, decoupled from the npm version (e.g. launcher 0.2.0 pulled `v0.1.0` images). That's a footgun for diagnosis: given a bug report you can't infer which images a given launcher version pulls.
+
+Decision: **the image tag is now derived from the launcher's own version** — `PUBLISHED_IMAGE_TAG = \`v${require("../package.json").version}\``. Launcher `x.y.z` always pulls `vx.y.z` images. Consequences:
+
+- **Every npm release requires a matching `vx.y.z` git tag** (which builds those images). Doc-only releases included — there's no longer a "no image rebuild needed" shortcut; the version and the images move together, on purpose.
+- **CI guard:** the `launcher` job (a required dependency of the image builds) fails a `v*` tag pipeline if `CIRCLE_TAG` ≠ `v$(cli version)`, so you can't build/publish a mismatched pair.
+- `CASCADIA_TAG` still overrides at runtime for testing against any tag.
+- Release flow is now: bump `cli/package.json` → cut the matching `vx.y.z` tag (CI builds images) → `npm publish`.
+
 ### 2026-06-06 — Demo pulls prebuilt GHCR images by default (flip the [2026-06-02](#2026-06-02--npx-cascadia-launcher--keyless-containerized-demo) "build locally" choice)
 
 The [2026-06-02 launcher entry](#2026-06-02--npx-cascadia-launcher--keyless-containerized-demo) deliberately built demo images **locally from source on first run** to avoid an image-registry/publish dependency, and noted "a future GHCR prebuilt-image flip is trivial." Field experience forced the flip: a cold `npx cascadia-gateway demo` had to `git clone` the repo and compile six images (the Rust proxy/mock-upstream dominating) — multiple minutes — and Compose's TTY build-progress renderer **flickered** badly throughout. Both symptoms share one cause: building from source on the hot path.
