@@ -5,7 +5,7 @@
 
 ## Purpose
 
-The credibility document. Explains how Cascadia judges LLM output quality, how the judges are calibrated against human ratings, and what the agreement numbers mean. This is the page hiring managers who read papers will scrutinize.
+The credibility document. Explains how Cascadia judges LLM output quality, how the judges are calibrated against human ratings, and what the agreement numbers mean. This is the page technical reviewers who read papers will scrutinize.
 
 ## Layout
 
@@ -79,5 +79,5 @@ Static page. No live data. Numbers (Kendall's τ, ensemble agreement) are hardco
 
 ## Notes
 
-- This page is what makes hiring conversations work. Without it, the headline cost-savings number is unfalsifiable.
+- This page is what makes the credibility claim work. Without it, the headline cost-savings number is unfalsifiable.
 - Pattern reference: the OpenAI evals docs page, Anthropic responsible-scaling-policy page, or similar serious technical reads — not a marketing page.

@@ -7,7 +7,7 @@ Project docs. The root [README.md](../README.md) is the entry point for everythi
 | File | When you'd read it |
 |---|---|
 | [`adding-a-provider.md`](adding-a-provider.md) | You want Cascadia to support a new upstream (Mistral, DeepSeek, Together, …). Start here — most requests are a one-line `CASCADIA_OPENAI_BASE_URL` override, not a new adapter. |
-| [`demo-script.md`](demo-script.md) | You're showing the dashboard live to a recruiter / hiring manager. One-page runbook, ~10-minute walkthrough. |
+| [`demo-script.md`](demo-script.md) | You're showing the dashboard live to a first-time evaluator. One-page runbook, ~10-minute walkthrough. |
 | [`prolific-runbook.md`](prolific-runbook.md) | You're scaling the human-rated calibration set via Prolific (200-pair production run). |
 
 ## Methodology / blog

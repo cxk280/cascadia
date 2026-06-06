@@ -7,7 +7,7 @@
 Three triggers that should move this from deferred to active:
 
 1. **Going public** — Show HN, r/MachineLearning, blog launch. The "n=200 human-rated" claim is what makes the methodology blog quoteable.
-2. **Recruiter takeaway / system-design round** — having "I ran a 200-pair human-rated study against a cross-family panel and characterized verbosity bias at $X" is concrete, not hand-wavy.
+2. **Concrete credibility claim** — having "I ran a 200-pair human-rated study against a cross-family panel and characterized verbosity bias at $X" is concrete, not hand-wavy.
 3. **Phase 5 final acceptance close** — the README acceptance row currently ends with "needs the 200-pair Prolific run." Closing the loop requires this.
 
 Pin `[[cascadia-prolific-deferred]]` in memory checks for these triggers automatically.

@@ -12,7 +12,7 @@ This list reflects what a *real* self-hostable LLM-gateway product needs to oper
 
 1. Validate the information architecture and navigation as a whole.
 2. Discover shared components (cards, tables, charts, code blocks, modals) before building them piecemeal.
-3. Make the portfolio artifact convincing: real products have ~25 screens, not 3.
+3. Make the product surface convincing: real products have ~25 screens, not 3.
 4. Get content/copy decisions out of the way once.
 
 **Not in scope (deliberately omitted):**
@@ -27,9 +27,9 @@ This list reflects what a *real* self-hostable LLM-gateway product needs to oper
 
 ## Tiers
 
-Mocks are built in order. Higher tiers tell the portfolio story; lower tiers complete the surface area.
+Mocks are built in order. Higher tiers tell the product story; lower tiers complete the surface area.
 
-- **Tier 1** — essential for the portfolio narrative; the screens hiring managers will look at.
+- **Tier 1** — essential for the product narrative; the screens a first-time evaluator looks at.
 - **Tier 2** — strong supporting evidence that this is a real product, not three nice screens.
 - **Tier 3** — completes the operator's daily-driver picture (config + onboarding).
 - **Tier 4** — commodity screens. Light-spec, light-mock. Necessary for completeness, low effort each.
