@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 300" font-family="ui-sans-serif, system-ui, sans-serif">
   <rect x="0" y="0" width="780" height="300" rx="10" fill="#fafafa" stroke="#e5e7eb"/>
-  <text x="20" y="28" font-size="15" font-weight="700" fill="#111827">3 · The cost / quality frontier (what the slider navigates)</text>
+  <text x="20" y="28" font-size="15" font-weight="700" fill="#111827">4 · The cost / quality frontier (what the slider navigates)</text>
 
   <!-- axes -->
   <line x1="80" y1="60" x2="80" y2="240" stroke="#9ca3af" stroke-width="1.5"/>
