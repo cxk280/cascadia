@@ -156,11 +156,12 @@ jobs:
             node -e "require('./lib/commands');require('./lib/docker');require('./lib/source')"
             node bin/cascadia.js help >/dev/null
 
-  # Build all 6 images for ONE architecture NATIVELY (no QEMU) and push per-arch
-  # tags (`:<tag>-amd64` / `:<tag>-arm64`). Fanned out across an x86 runner and a
-  # CircleCI Arm runner in parallel; `merge-manifests` then stitches the per-arch
-  # tags into multi-arch manifest lists. Native arm64 avoids the QEMU emulation
-  # that blew the 1-hour job limit when all six built emulated in one job.
+  # Build all 6 images for ONE architecture NATIVELY (no QEMU) and push each by
+  # DIGEST (no tag). Fanned out across an x86 runner and a CircleCI Arm runner in
+  # parallel; the digests are handed to `merge-manifests` via the workspace,
+  # which stitches them into multi-arch manifest lists — so the registry only
+  # ever holds the tagged multi-arch image, no per-arch tag clutter. Native arm64
+  # avoids the QEMU emulation that blew the 1-hour job limit (one emulated job).
   # Needs CircleCI project env vars GHCR_USER + GHCR_TOKEN (PAT, write:packages).
   build-arch:
     machine:
@@ -177,38 +178,56 @@ jobs:
           name: Log in to GHCR
           command: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
       - run:
-          name: Build + push all 6 images (<< parameters.arch >>)
+          name: buildx (docker-container driver — native << parameters.arch >>, no QEMU)
+          command: docker buildx create --name cascadia --driver docker-container --use --bootstrap
+      - run:
+          name: Build + push by digest (<< parameters.arch >>)
           no_output_timeout: 40m
           command: |
             set -euo pipefail
+            if ! command -v jq >/dev/null; then sudo apt-get update -y && sudo apt-get install -y jq; fi
             REG=ghcr.io/cxk280
+            mkdir -p /tmp/digests
             for s in proxy mock-upstream judge-worker policy-controller dashboard-api dashboard; do
               echo ">> building cascadia-$s (<< parameters.arch >>)"
-              docker build -f deploy/docker/$s.Dockerfile \
-                -t "$REG/cascadia-$s:${CIRCLE_TAG}-<< parameters.arch >>" .
-              docker push "$REG/cascadia-$s:${CIRCLE_TAG}-<< parameters.arch >>"
+              # push-by-digest pushes the image with NO tag — only the final
+              # multi-arch manifest (merge-manifests) gets a tag, so no per-arch
+              # :<tag>-amd64 / :<tag>-arm64 clutter is left in the registry.
+              docker buildx build --platform "linux/<< parameters.arch >>" \
+                -f deploy/docker/$s.Dockerfile \
+                --output "type=image,name=$REG/cascadia-$s,push-by-digest=true,push=true" \
+                --metadata-file /tmp/md.json .
+              jq -r '."containerimage.digest"' /tmp/md.json > "/tmp/digests/$s.<< parameters.arch >>"
             done
+      - persist_to_workspace:
+          root: /tmp/digests
+          paths:
+            - "."
 
-  # Stitch the per-arch tags into multi-arch manifest lists (+ :latest). Pulls
-  # only manifests (no image layers), so it's fast and needs no checkout.
+  # Stitch the per-arch images (referenced by DIGEST — no per-arch tags exist)
+  # into multi-arch manifest lists (+ :latest). Manifests only, so it's fast.
   merge-manifests:
     machine:
       image: ubuntu-2204:current
     steps:
+      - attach_workspace:
+          at: /tmp/digests
       - run:
           name: Log in to GHCR
           command: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
       - run:
-          name: Create + push multi-arch manifests
+          name: Create + push multi-arch manifests (from digests)
           command: |
             set -euo pipefail
             REG=ghcr.io/cxk280
             for s in proxy mock-upstream judge-worker policy-controller dashboard-api dashboard; do
+              amd=$(cat "/tmp/digests/$s.amd64")
+              arm=$(cat "/tmp/digests/$s.arm64")
               docker buildx imagetools create \
                 -t "$REG/cascadia-$s:${CIRCLE_TAG}" \
                 -t "$REG/cascadia-$s:latest" \
-                "$REG/cascadia-$s:${CIRCLE_TAG}-amd64" \
-                "$REG/cascadia-$s:${CIRCLE_TAG}-arm64"
+                "$REG/cascadia-$s@$amd" \
+                "$REG/cascadia-$s@$arm"
             done
 
 workflows:
