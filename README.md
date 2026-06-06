@@ -116,17 +116,17 @@ Three things competitors structurally don't do: **counterfactual shadow routing*
 
 ## Quick start
 
-The fastest path is the keyless `npx cascadia-gateway demo` above — only Docker + Node, no keys, no cost. It **pulls prebuilt images** from `ghcr.io/cxk280` (override with `CASCADIA_REGISTRY` / `CASCADIA_TAG`); add `--build` to build from source instead (needs git + a checkout). `npx cascadia-gateway up` runs the same stack against real providers (it prompts for your keys). Both wrap Docker Compose; the launcher lives in [`cli/`](cli/README.md).
+The fastest path is the keyless `npx cascadia-gateway demo` (above) — Docker + Node, no keys, no cost. `npx cascadia-gateway up` runs the same stack against **real providers** (it prompts for keys). Both wrap Docker Compose; see [`cli/`](cli/README.md) for flags and registry/build overrides.
 
-**From source (contributors).** If you have the Rust + Python/uv + Node toolchain and want host-process iteration instead of containers:
+**From source (contributors).** With the Rust + Python/uv + Node toolchain, run the stack as host processes instead of containers:
 
 ```bash
 ./scripts/quickstart.sh
 ```
 
-One command: brings up Postgres, writes a starter policy, builds and starts the mock upstream + proxy, drives synthetic traffic to fill the Pareto data, and launches the dashboard-api + dashboard. It prints each step (and the policy knobs) as it runs; Ctrl-C tears it down. Proxy → `localhost:8080` (OpenAI-compatible at `/v1`); dashboard → `localhost:3000` (first visit → `/signup`). **Every port falls back to the next free one if it's already taken** (so it won't fight another dev server) — watch the startup lines for the resolved ports. That includes Postgres: if a *foreign* Postgres already owns `5432` (a common one is a Homebrew/Postgres.app install), the cascadia container is published on the next free host port instead, and the connection string follows. The dashboard is **precompiled** (`next build` + `next start`) so navigation is instant; set `DASHBOARD_MODE=dev` for the hot-reloading dev server while editing the UI. Override the preferred values (`CASCADIA_PG_PORT`, `CASCADIA_LISTEN_PORT`, `DASHBOARD_PORT`, `CASCADIA_DASHBOARD_PORT`, `CASCADIA_MOCK_PORT`), plus `CASCADIA_DATABASE_URL` (use your own DB outright), `CASCADIA_POLICY_FILE`, `QUICKSTART_TRAFFIC`, or `CASCADIA_AUTH_DISABLED`, via the environment.
+Brings up Postgres, the mock upstream + proxy, synthetic traffic, and the dashboard — printing each step; Ctrl-C tears it all down. Proxy → `localhost:8080` (`/v1`), dashboard → `localhost:3000`. **Every port auto-falls-back if it's taken** (Postgres included), so it won't fight another dev server. Common knobs — `QUICKSTART_TRAFFIC`, `CASCADIA_DATABASE_URL`, `DASHBOARD_MODE=dev`, the `*_PORT` overrides — are set via the environment.
 
-**Live data, standalone (real providers, real cost).** `CASCADIA_LIVE=1 ./scripts/quickstart.sh` runs the same stack against a real cascade instead of the mock — Anthropic `claude-haiku-4-5` → `claude-sonnet-4-6` by default — with real traffic, a real multi-model **judge panel** scoring shadow pairs live, and the controller refitting on a loop. Needs `ANTHROPIC_API_KEY` (cascade) and `OPENAI_API_KEY` (cross-family judge — the panel must be a different family than the cascade). Live mode **clears the synthetic seed first** so the dashboard shows only live data; add **`QUICKSTART_TRAFFIC=0`** to start from an empty dashboard and drive your own traffic (handy on camera — watch the KPIs and Pareto chart fill in real time). Signup is **double opt-in** — it emails a confirmation link you must click to finish (with no SMTP configured, the link is printed to `/tmp/cascadia-dashboard-api.log`); the first confirmed account becomes **admin**, and calibration is admin/reviewer-only (operators consume the calibrated judge, they don't label). The same mode becomes a LiteLLM-stacked demo later by pointing `CASCADIA_OPENAI_BASE_URL` at LiteLLM — no code change.
+**Live data (real providers, real cost).** `CASCADIA_LIVE=1 ./scripts/quickstart.sh` swaps the mock for a real cascade — Anthropic `claude-haiku-4-5` → `claude-sonnet-4-6` — with a live multi-model **judge panel** and the controller refitting on a loop. Needs `ANTHROPIC_API_KEY` (cascade) and `OPENAI_API_KEY` (cross-family judge). Add `QUICKSTART_TRAFFIC=0` to start empty and drive your own traffic. Signup is double opt-in; the first confirmed account becomes **admin**.
 
 **Deploying instead?** Kubernetes → [`deploy/helm/cascadia/`](deploy/helm/cascadia/README.md). Container stacks → `deploy/compose/docker-compose.demo.yml` (keyless demo, what `npx cascadia-gateway demo` runs) and `docker-compose.full.yml` (real providers). Railway/Render/Fly → [PLAN.md §9 (2026-05-20)](PLAN.md).
 
@@ -213,7 +213,7 @@ flowchart LR
         direction TB
         Route["1. classify · 2. lookup · 3. call cheap<br/>4. escalate if low confidence<br/>5. shadow-route X% async · 6. emit event"]
     end
-    class proxy hot
+    style proxy fill:#0B3D2E,stroke:#5AE3D6,color:#E6E8EC,stroke-width:1px
 
     subgraph providers ["Phase 7 upstreams (per-tier provider routing)"]
         direction LR
@@ -233,7 +233,7 @@ flowchart LR
     Route --> ANT
     Route --> GRQ
     Route --> XAI
-    Route -.OpenAI-compat.-> LL
+    Route -. "OpenAI-compat" .-> LL
     Route -- "decision events + shadow pairs" --> PG
     PG -- "unjudged pairs" --> JW
     JW -- "judge_scores" --> PG
