@@ -156,35 +156,59 @@ jobs:
             node -e "require('./lib/commands');require('./lib/docker');require('./lib/source')"
             node bin/cascadia.js help >/dev/null
 
-  # Build + push the 6 demo/live images as multi-arch (amd64 + arm64) to GHCR.
-  # Runs ONLY on a `v*` git tag, after the test jobs pass. A machine executor is
-  # required: the container `docker:` executors can't run buildx + QEMU.
+  # Build all 6 images for ONE architecture NATIVELY (no QEMU) and push per-arch
+  # tags (`:<tag>-amd64` / `:<tag>-arm64`). Fanned out across an x86 runner and a
+  # CircleCI Arm runner in parallel; `merge-manifests` then stitches the per-arch
+  # tags into multi-arch manifest lists. Native arm64 avoids the QEMU emulation
+  # that blew the 1-hour job limit when all six built emulated in one job.
   # Needs CircleCI project env vars GHCR_USER + GHCR_TOKEN (PAT, write:packages).
-  publish-images:
+  build-arch:
     machine:
       image: ubuntu-2204:current
+    resource_class: << parameters.rc >>
+    parameters:
+      arch:
+        type: string
+      rc:
+        type: string
     steps:
       - checkout
       - run:
           name: Log in to GHCR
           command: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
       - run:
-          name: Enable multi-arch (QEMU + buildx)
-          command: |
-            docker run --privileged --rm tonistiigi/binfmt --install all
-            docker buildx create --use --name cascadia-builder
-      - run:
-          name: Build + push (amd64 + arm64)
+          name: Build + push all 6 images (<< parameters.arch >>)
+          no_output_timeout: 40m
           command: |
             set -euo pipefail
             REG=ghcr.io/cxk280
             for s in proxy mock-upstream judge-worker policy-controller dashboard-api dashboard; do
-              echo ">> building cascadia-$s"
-              docker buildx build --platform linux/amd64,linux/arm64 \
-                -f deploy/docker/$s.Dockerfile \
+              echo ">> building cascadia-$s (<< parameters.arch >>)"
+              docker build -f deploy/docker/$s.Dockerfile \
+                -t "$REG/cascadia-$s:${CIRCLE_TAG}-<< parameters.arch >>" .
+              docker push "$REG/cascadia-$s:${CIRCLE_TAG}-<< parameters.arch >>"
+            done
+
+  # Stitch the per-arch tags into multi-arch manifest lists (+ :latest). Pulls
+  # only manifests (no image layers), so it's fast and needs no checkout.
+  merge-manifests:
+    machine:
+      image: ubuntu-2204:current
+    steps:
+      - run:
+          name: Log in to GHCR
+          command: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+      - run:
+          name: Create + push multi-arch manifests
+          command: |
+            set -euo pipefail
+            REG=ghcr.io/cxk280
+            for s in proxy mock-upstream judge-worker policy-controller dashboard-api dashboard; do
+              docker buildx imagetools create \
                 -t "$REG/cascadia-$s:${CIRCLE_TAG}" \
                 -t "$REG/cascadia-$s:latest" \
-                --push .
+                "$REG/cascadia-$s:${CIRCLE_TAG}-amd64" \
+                "$REG/cascadia-$s:${CIRCLE_TAG}-arm64"
             done
 
 workflows:
@@ -209,8 +233,11 @@ workflows:
       - launcher:
           filters: { tags: { only: /^v.*/ } }
 
-      # --- release: build + push images on a v* tag, after tests pass ---
-      - publish-images:
+      # --- release: native per-arch builds (parallel) → manifest merge, on a v* tag ---
+      - build-arch:
+          name: build-amd64
+          arch: amd64
+          rc: large
           requires:
             - rust
             - test-judge-worker
@@ -218,6 +245,31 @@ workflows:
             - test-dashboard-api
             - dashboard
             - launcher
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - build-arch:
+          name: build-arm64
+          arch: arm64
+          rc: arm.large
+          requires:
+            - rust
+            - test-judge-worker
+            - test-policy-controller
+            - test-dashboard-api
+            - dashboard
+            - launcher
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - merge-manifests:
+          requires:
+            - build-amd64
+            - build-arm64
           filters:
             tags:
               only: /^v.*/
