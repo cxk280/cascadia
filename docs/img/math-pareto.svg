@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 300" font-family="ui-sans-serif, system-ui, sans-serif">
-  <rect x="0" y="0" width="780" height="300" rx="10" fill="#fafafa" stroke="#e5e7eb"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 326" font-family="ui-sans-serif, system-ui, sans-serif">
+  <rect x="0" y="0" width="780" height="326" rx="10" fill="#fafafa" stroke="#e5e7eb"/>
   <text x="20" y="28" font-size="15" font-weight="700" fill="#111827">4 · The cost / quality frontier (what the slider navigates)</text>
 
   <!-- axes -->
@@ -30,8 +30,9 @@
 
   <!-- dominated point -->
   <circle cx="626" cy="134" r="6" fill="#9ca3af"/>
-  <text x="636" y="138" font-size="10.5" fill="#6b7280">cluster-3 — dominated</text>
-  <text x="636" y="152" font-size="9.5" fill="#9ca3af">(costs more than cluster-2 for less quality → trim it)</text>
+  <text x="760" y="132" font-size="10.5" fill="#6b7280" text-anchor="end">cluster-3 — dominated</text>
+  <text x="760" y="150" font-size="9.5" fill="#9ca3af" text-anchor="end">(costs more than cluster-2, less quality → trim)</text>
 
-  <text x="80" y="292" font-size="11" fill="#6b7280">The frontier = points you can't beat on both axes. The slider interpolates along it; a leave-one-out back-test checks it predicts each cluster within its 95% CI.</text>
+  <text x="80" y="296" font-size="11" fill="#6b7280">The frontier = the points you can't beat on both axes; the slider interpolates along it.</text>
+  <text x="80" y="312" font-size="11" fill="#6b7280">A leave-one-out back-test checks the fit predicts each held-out cluster within its 95% CI.</text>
 </svg>
