@@ -54,4 +54,12 @@ pulls prebuilt images — no source tree required. The build-from-source paths
 - git — only for `demo --build` and `up` (building from source); **not** for the
   default pull-based demo
 
+## Editions
+
+The full closed loop is **MIT-licensed and free** — the cascade proxy, judge
+ensemble, self-tuning controller, and dashboard all run and self-tune cost vs.
+quality with no human in the loop. A future paid tier adds human-grounded
+(Prolific) judge calibration; the open-source panel stays fully functional. See
+the [main README](https://github.com/cxk280/cascadia#free-and-open-source--and-a-future-paid-tier).
+
 Run `npx cascadia-gateway doctor` to verify all of the above.

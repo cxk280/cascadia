@@ -272,6 +272,14 @@ Phases 1–7 are shipped: the Rust proxy, 4-provider adapters with tool-use + st
 
 The full toolchain ships in-repo — an active-learning sampler, the `/calibrate` labeling UI (position randomization + attention checks), an aggregator that emits canonical JSONL, and an LLM-panel backstop. The end-to-end runbook (sample → label → aggregate → compute τ-b) is in **[`docs/calibration.md`](docs/calibration.md)**.
 
+## Free and open source — and a future paid tier
+
+Everything in this repo is **MIT-licensed and free**, and it's the whole product, not a teaser: the Rust cascade proxy, counterfactual shadow eval, the multi-model **judge ensemble**, the self-tuning policy controller, the Pareto dashboard, and the 4-provider adapters. The closed loop runs and **self-tunes cost vs. quality with no human in it** — the judge panel (with the verbosity/concision correction) supplies the quality signal, so you get the ~70% expensive-tier reduction out of the box, with no labeling and no separate eval rig.
+
+The [honest gap](#status) above is narrow on purpose: it's about *validating the judge panel against human preference* to a production-grade bar — **not** about whether the system works. It tunes itself from the panel signal today, on your own infrastructure, for free.
+
+**Future paid tier — human-grounded calibration.** A planned paid/managed tier will close that gap with a **Prolific** human-rated calibration set: ~200 real-human pairwise judgments that anchor the judge panel to human preference, productionize the panel-vs-human **τ-b** agreement metric, and ship the calibrated judge weights. The open-source panel stays fully functional — the paid tier makes its quality scores **human-validated** rather than only internally consistent.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Productizes ideas from FrugalGPT (Chen et al. 2023), RouteLLM (Ong et al. 2024), AutoMix (Madaan et al. 2023), and LLM-as-a-Judge (Zheng et al. 2023). The closed feedback loop — counterfactual shadow eval driving routing policy without a hand-maintained golden set — is what Cascadia adds.

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 300" font-family="ui-sans-serif, system-ui, sans-serif">
   <rect x="0" y="0" width="780" height="300" rx="10" fill="#fafafa" stroke="#e5e7eb"/>
-  <text x="20" y="30" font-size="15" font-weight="700" fill="#111827">2 · The learning loop (no human in it)</text>
+  <text x="20" y="30" font-size="15" font-weight="700" fill="#111827">3 · The learning loop (no human in it)</text>
 
   <!-- proxy -->
   <rect x="40" y="120" width="140" height="56" rx="8" fill="#eff6ff" stroke="#2563eb"/>
@@ -24,11 +24,11 @@
 
   <!-- arrows around the loop -->
   <line x1="180" y1="138" x2="248" y2="98" stroke="#6b7280" stroke-width="2" marker-end="url(#a)"/>
-  <text x="178" y="112" font-size="10" fill="#6b7280">mirror a fraction</text>
+  <text x="176" y="110" font-size="10" fill="#6b7280" text-anchor="end">mirror a fraction</text>
   <line x1="400" y1="92" x2="500" y2="118" stroke="#6b7280" stroke-width="2" marker-end="url(#a)"/>
-  <text x="406" y="100" font-size="10" fill="#6b7280">ask the judge</text>
+  <text x="410" y="84" font-size="10" fill="#6b7280">ask the judge</text>
   <line x1="520" y1="176" x2="392" y2="206" stroke="#6b7280" stroke-width="2" marker-end="url(#a)"/>
-  <text x="430" y="205" font-size="10" fill="#6b7280">per-cluster q̄</text>
+  <text x="466" y="183" font-size="10" fill="#6b7280" text-anchor="end">per-cluster q̄</text>
   <line x1="250" y1="210" x2="150" y2="178" stroke="#16a34a" stroke-width="2" marker-end="url(#g)"/>
   <text x="120" y="205" font-size="10" fill="#16a34a">new τ (hot-reload)</text>
 
