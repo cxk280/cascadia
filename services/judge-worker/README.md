@@ -2,7 +2,7 @@
 
 Judge worker for Cascadia. Consumes shadow-routed response pairs (cheap vs expensive) and emits scored verdicts with full provenance.
 
-Architecture follows the SOLID Agent Swarms pattern — see [`../../SOLID.md`](../../SOLID.md) at the repo root.
+Architecture follows the SOLID Agent Swarms pattern: an `LLMClient` ABC with per-provider adapters, a `BaseJudge`/`JudgeRegistry` for pluggable judges, an executor abstraction, and a thin `cli.py` composition root that wires concretes at the edge.
 
 ## Quick start
 

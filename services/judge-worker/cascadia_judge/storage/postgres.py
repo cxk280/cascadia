@@ -4,8 +4,8 @@ One class — `AsyncpgShadowPairStorage` — implements `ShadowPairStorage`.
 Holds an `asyncpg.Pool`; no SDK churn outside this file.
 
 The SQL is hand-written; we deliberately don't pull in SQLAlchemy or
-SQLModel. Per SOLID.md §8 ("Provider SDK imports banned"), the worker keeps
-its dependency surface tight. asyncpg is the only Postgres client.
+SQLModel. The worker keeps its dependency surface tight (no ORMs, no
+provider SDKs outside the adapter layer). asyncpg is the only Postgres client.
 
 Schema referenced (migration `0002_cascade.sql` in `crates/proxy/`):
 

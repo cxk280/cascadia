@@ -37,7 +37,6 @@ dashboard/tsconfig.tsbuildinfo
 /tmp/
 
 # Repo-level docs not needed inside images.
-SOLID.md
 docs/
 deploy/helm/
 bench/

@@ -20,7 +20,7 @@ that also learns shadow_rate and per-model preferences.
 The Rust proxy needs to stay on the hot path. Policy reasoning happens here,
 out of process, on a periodic cadence (cron / k8s CronJob / `--loop`).
 
-## SOLID
+## Design (substitution surfaces)
 
 - `storage.py` is the substitution surface for reading shadow data. Today
   it's asyncpg; tomorrow it could be a BigQuery exporter or a S3 snapshot
