@@ -51,14 +51,19 @@ function commandExists(cmd, probeArgs = ["--version"]) {
   return r.code === 0 && !r.error;
 }
 
-// Is something already listening on this TCP port (localhost)?
+// Would Docker fail to publish this TCP port? Test-bind the SAME address Docker
+// publishes on — 0.0.0.0 (the IPv4 wildcard) — not 127.0.0.1. A process holding
+// the wildcard (e.g. a dev server on `*:3000`) doesn't block a loopback-specific
+// bind, so a 127.0.0.1 probe reports the port free while `docker compose up`
+// still hits "bind: address already in use". Matching Docker's bind address
+// makes the port-fallback actually fall back.
 function portInUse(port) {
   return new Promise((resolve) => {
     const srv = net
       .createServer()
       .once("error", () => resolve(true))
       .once("listening", () => srv.close(() => resolve(false)))
-      .listen(port, "127.0.0.1");
+      .listen(port, "0.0.0.0");
   });
 }
 
