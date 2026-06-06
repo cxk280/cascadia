@@ -10,7 +10,7 @@
 ## 1. Audience & goals
 
 **Primary audience:**
-1. MLOps hiring managers and engineers evaluating Chris's portfolio (read time: 30 seconds before deciding "interesting" or "next").
+1. MLOps engineers and technical evaluators scanning the repo (read time: 30 seconds before deciding "interesting" or "next").
 2. Self-host curious developers comparing LLM gateways (read time: 2 minutes before deciding "try" or "skip").
 3. ML systems people who read papers (FrugalGPT, RouteLLM, AutoMix) and want to see one shipped.
 
@@ -18,7 +18,7 @@
 1. **Convey novelty in one chart.** The Pareto frontier with operating point is THE first impression. If they only look at one image, this is it.
 2. **Establish technical credibility.** Real numbers, real architecture diagram, real code snippet, real papers cited. No marketing fluff.
 3. **Make "try it" trivial.** A one-liner that anyone can copy-paste should be visible without scrolling past the fold.
-4. **Bias selection signal.** Without saying "I built this for an MLOps job hunt," the page should make it obvious that whoever built this has serious infra and ML systems chops.
+4. **Signal technical depth.** Without stating it outright, the page should make it obvious that whoever built this has serious infra and ML systems chops.
 
 **Anti-goals:**
 - SaaS-marketing tone ("Transform your LLM costs with…"). No.
@@ -328,7 +328,7 @@ Each number in display weight, `accent.primary`. Below each: short label + tiny 
 
 > ⚠ Phase-0 status: numbers above are *aspirational targets* until Phase 6 ships. The README will switch to measured numbers in green at that point; until then they read in `accent.warn`.
 
-**Why this caveat:** Honesty is a portfolio differentiator. Faking numbers ruins the project; clearly distinguishing target-vs-measured is unusual and credibility-positive.
+**Why this caveat:** Honesty is a credibility differentiator. Faking numbers ruins the project; clearly distinguishing target-vs-measured is unusual and credibility-positive.
 
 ---
 
@@ -372,7 +372,7 @@ Section heading: `H2: How Cascadia compares`.
 >
 > [Read the eval methodology →](docs/methodology.md)
 
-**Why this section exists:** Hiring managers who read papers will look for this. Without it, the headline numbers are unfalsifiable; with it, they're a credibility statement.
+**Why this section exists:** Technical reviewers who read papers will look for this. Without it, the headline numbers are unfalsifiable; with it, they're a credibility statement.
 
 ---
 
@@ -461,7 +461,7 @@ These decisions should be appended to `PLAN.md` §9 as soon as the spec is appro
 - **Option B:** H1 = "Pay 78% less for LLM calls without lowering quality." Wordmark stays smaller above. Benefits-forward, more SaaS-y, higher conversion-energy.
 - **Option C:** H1 = "The first LLM gateway that learns from your traffic." Differentiator-forward.
 
-Recommendation: **A** for the portfolio audience (clean, confident, ML-systems-credible). Re-evaluate after Phase 6 if a marketing-style landing makes sense.
+Recommendation: **A** for the evaluator audience (clean, confident, ML-systems-credible). Re-evaluate after Phase 6 if a marketing-style landing makes sense.
 
 ### 9.2 Should the Pareto-chart "operating point" be live or canned?
 
@@ -476,7 +476,7 @@ Affects every install command, every link, every badge. Need to confirm before F
 
 ### 9.4 Logo / wordmark
 
-The spec uses "Cascadia" in JetBrains Mono. Is a real logomark needed for portfolio purposes, or does typographic-only wordmark suffice? Recommendation: typographic-only for Phase 0; revisit before public launch.
+The spec uses "Cascadia" in JetBrains Mono. Is a real logomark needed for now, or does typographic-only wordmark suffice? Recommendation: typographic-only for Phase 0; revisit before public launch.
 
 ### 9.5 Should I commission a real artist for any visual element?
 

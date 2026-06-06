@@ -1,4 +1,4 @@
-# Cascadia — employer-demo script
+# Cascadia — demo script
 
 > One-page runbook for a 5-to-10-minute live demo. Assumes the local stack is up
 > (`docker compose up -d`, proxy + dashboard-api + dashboard running, see [README.md](../README.md#quick-start))
@@ -42,7 +42,7 @@ Then: *"The proxy itself adds about 2ms on top of that, measured separately unde
 
 ### 2. `/pareto` — Pareto frontier (90s — the headline)
 
-This is the chart that closes the interview. Talk through:
+This is the headline chart of the demo. Talk through:
 
 - One dot per cluster. X-axis = escalation rate (cost proxy). Y-axis = mean judge score. Dot size = sample count.
 - Real numbers from the current DB (Phase 7.3 mixed-provider seed):
@@ -82,7 +82,7 @@ Show keyboard shortcuts ([A] / [B] / [T] / [U], Esc to blur rationale). Mention 
 
 ## The verbosity-bias honesty beat (90s — refuse to flinch)
 
-This is the differentiator most candidates fail at. Walk through:
+This is the differentiator most gateway projects fail at. Walk through:
 
 - *"After we fixed the rubric, we ran the bias-corrected judge ensemble against the same human labels — and the ensemble agreed with humans at **τ-b ≈ 0**."*
 - Show the cherry-picked disagreement table from `docs/blog/methodology.md`:
@@ -91,7 +91,7 @@ This is the differentiator most candidates fail at. Walk through:
 - *"This is **verbosity bias** — Zheng et al. 2023 published it; we reproduced it cleanly in our own data. The 3-judge cross-family panel was unanimous on 24 of 30 pairs and still wrong by human standards."*
 - *"The clean part: panel-internal τ ≈ +0.28. The judges agree with each other meaningfully. They disagree with humans uniformly. That's a bias, not noise."*
 - *"The concision-adjusted aggregator (`--concision-weight 0.30`) walks the panel-vs-human τ-b from **−0.152 → +0.196** — full sweep table in `docs/blog/methodology.md`. The best weight isn't a silver bullet; it's a published, characterized correction."*
-- Closer: *"Most gateway repos publish '97% quality at 78% cost' and don't tell you what the judge is or whether it agrees with humans. We published that the headline judge agreed with humans at zero, named the bias, shipped the correction, and put the gap on the website. That's the methodology blog. The reason that's the right move for a portfolio: anyone who reads it knows what they're looking at."*
+- Closer: *"Most gateway repos publish '97% quality at 78% cost' and don't tell you what the judge is or whether it agrees with humans. We published that the headline judge agreed with humans at zero, named the bias, shipped the correction, and put the gap on the website. That's the methodology blog. The reason that's the right move for credibility: anyone who reads it knows what they're looking at."*
 
 ## Differentiator close (30s)
 

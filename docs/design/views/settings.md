@@ -59,4 +59,4 @@ Form rows, dropdown, checkbox, danger button (with double-confirm modal).
 
 ## Notes
 
-- Retention is the most-tuned setting. Default 30 days for events is generous for a portfolio project; production users may go shorter for privacy.
+- Retention is the most-tuned setting. Default 30 days for events is generous for a demo deployment; production users may go shorter for privacy.

@@ -82,7 +82,7 @@ export interface ParetoPoint {
 }
 
 // Dashboard reads default to a 7-day window so demos and stale-data
-// portfolio reviews still render the real numbers. The dashboard-api
+// demo reviews still render the real numbers. The dashboard-api
 // itself still accepts any window_minutes ∈ [1, 10080].
 export const DEFAULT_WINDOW_MINUTES = 10080;
 export const DEFAULT_WINDOW_LABEL = "Last 7 days";
