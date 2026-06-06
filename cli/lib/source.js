@@ -31,8 +31,11 @@ function walkUp(start) {
   return null;
 }
 
-// Resolve (and if needed, fetch) the source tree. Returns its absolute path.
-async function resolveSource() {
+// Locate an EXISTING checkout without ever cloning. Returns its absolute path,
+// or null if there's no local source tree. Used by the default (pull) demo path
+// and by `doctor`, which must never trigger a multi-hundred-MB clone as a
+// side effect of a status check.
+function findLocalCheckout() {
   if (process.env.CASCADIA_HOME) {
     const home = path.resolve(process.env.CASCADIA_HOME);
     if (isCheckout(home)) return home;
@@ -40,12 +43,15 @@ async function resolveSource() {
       `CASCADIA_HOME=${home} is not a Cascadia checkout (missing ${MARKER})`
     );
   }
+  return walkUp(process.cwd()) || walkUp(path.resolve(__dirname, ".."));
+}
 
-  const fromCwd = walkUp(process.cwd());
-  if (fromCwd) return fromCwd;
-
-  const fromSelf = walkUp(path.resolve(__dirname, ".."));
-  if (fromSelf) return fromSelf;
+// Resolve (and if needed, fetch) the source tree. Returns its absolute path.
+// Only the build-from-source paths (`demo --build`, `up`) call this — it can
+// clone, which requires git.
+async function resolveSource() {
+  const local = findLocalCheckout();
+  if (local) return local;
 
   // Cold run: clone (or update) into a cache dir.
   if (!commandExists("git")) {
@@ -73,4 +79,4 @@ async function resolveSource() {
   return cache;
 }
 
-module.exports = { resolveSource, DEFAULT_REPO };
+module.exports = { resolveSource, findLocalCheckout, DEFAULT_REPO };

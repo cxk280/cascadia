@@ -241,6 +241,18 @@ Originally scoped as a separate phase (PLAN.md §9 "open issues" 2026-05-19). Fo
 
 Newest first. Decisions are append-only; supersedes are noted by linking forward.
 
+### 2026-06-06 — Demo pulls prebuilt GHCR images by default (flip the [2026-06-02](#2026-06-02--npx-cascadia-launcher--keyless-containerized-demo) "build locally" choice)
+
+The [2026-06-02 launcher entry](#2026-06-02--npx-cascadia-launcher--keyless-containerized-demo) deliberately built demo images **locally from source on first run** to avoid an image-registry/publish dependency, and noted "a future GHCR prebuilt-image flip is trivial." Field experience forced the flip: a cold `npx cascadia-gateway demo` had to `git clone` the repo and compile six images (the Rust proxy/mock-upstream dominating) — multiple minutes — and Compose's TTY build-progress renderer **flickered** badly throughout. Both symptoms share one cause: building from source on the hot path.
+
+Decision: the default `cascadia demo` now **pulls prebuilt multi-arch images from `ghcr.io/cxk280`** instead of building. Source-build is still available behind `--build`.
+
+- **Images.** New CircleCI `publish-images` job (machine executor + buildx + QEMU) builds all six images for `linux/amd64,linux/arm64` and pushes `:<tag>` + `:latest` to GHCR, gated on a `v*` git tag after the test jobs pass. GHCR package visibility must be **public** for anonymous pull. Auth via `GHCR_USER`/`GHCR_TOKEN` project env vars.
+- **Compose.** `image:` refs gained a `${CASCADIA_REGISTRY:-}` prefix (empty → today's local-build behavior; `ghcr.io/cxk280/` → pull). Build sections stay, so `--build` is unchanged. The demo compose is **bundled into the npm package** (`cli/assets/`, generated from the in-tree source of truth by `scripts/sync-assets.js` on `prepack`, with a CI `--check` drift guard) so the pull path needs **no git checkout at all**.
+- **Pull semantics.** `compose pull` then `up -d --no-build` — a missing image fails loudly instead of silently falling back to an in-place build (Compose `up` builds services with a `build:` section when their image is absent). The launcher pins `PUBLISHED_IMAGE_TAG` in lockstep with the image release; `CASCADIA_TAG`/`CASCADIA_REGISTRY` override it.
+- **Flicker fix (independent).** The launcher now passes Compose's global `--progress plain` whenever it builds (`--build`), replacing the in-place TTY redraw with linear output — no flicker even on the source-build path.
+- **git is no longer required** for the default demo (only for `--build`/`up`); `doctor` and the READMEs updated to say so.
+
 ### 2026-06-02 — `npx cascadia` launcher + keyless containerized demo
 
 Open-sourcing needs an "extremely easy, single-command" entrypoint. The mature `scripts/quickstart.sh` already gives a one-command stack but runs services as **host processes** — it needs the full Rust + Python/uv + Node toolchain, which is too much for a stranger evaluating the project.
