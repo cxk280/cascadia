@@ -13,7 +13,7 @@
 
 ## 1. Context
 
-Cascadia is a multi-month flagship MLOps portfolio project. The goal is to land MLOps roles by demonstrating a rare combination of:
+Cascadia is a self-hostable MLOps system that combines:
 
 - **Production DevOps rigor:** Rust async services, Kubernetes, Helm, Prometheus, OpenTelemetry, SLOs, chaos.
 - **Clever AI/ML systems design:** novel routing algorithms grounded in recent research (FrugalGPT, RouteLLM, AutoMix).
@@ -28,7 +28,7 @@ The LLM-ops space is crowded but fragmented:
 
 **Nobody has shipped a gateway that learns the right cascade thresholds from live production traffic without a hand-maintained golden dataset.** That gap is Cascadia's spine.
 
-The portfolio artifact that closes interview conversations is a **single Pareto-frontier chart** showing measured cost-vs-quality tradeoffs on real benchmarks, with Cascadia's current operating point plotted on it.
+The headline artifact is a **single Pareto-frontier chart** showing measured cost-vs-quality tradeoffs on real benchmarks, with Cascadia's current operating point plotted on it.
 
 ---
 
@@ -200,7 +200,7 @@ Originally scoped as a separate phase (PLAN.md §9 "open issues" 2026-05-19). Fo
 
 | Risk                                                    | Mitigation                                                                                                                                                                                                                                  |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Judge reliability is the project's credibility.         | Judge ensemble + human-rated calibration set + publish the methodology and agreement numbers prominently. If judges can't beat 0.7 Kendall's τ vs humans, the whole pitch falls. Build the calibration set early.                            |
+| Judge reliability is the project's credibility.         | Judge ensemble + human-rated calibration set + publish the methodology and agreement numbers prominently. If judges can't beat 0.7 Kendall's τ vs humans, the whole claim falls. Build the calibration set early.                            |
 | Latency budget (Rust proxy must add < 2 ms P99).        | No DB calls in hot path; in-memory policy table; ONNX embedder pinned to small model; benchmark continuously in CI.                                                                                                                          |
 | Cold start without eval data.                           | Ship a "starter policy" derived from public benchmarks (MT-Bench by category) so day-one users get useful cascading; warm up over a few hours of traffic.                                                                                    |
 | Crowded space + marketing ("isn't this LiteLLM?").     | README opens with the Pareto chart and the three claims; benchmark page is the second click; comparison table with LiteLLM/Portkey/RouteLLM third click.                                                                                     |
@@ -219,19 +219,19 @@ Originally scoped as a separate phase (PLAN.md §9 "open issues" 2026-05-19). Fo
 - **Pareto-frontier honesty:** pick three points on the predicted frontier; run actual traffic; measured cost/quality within stated confidence interval of prediction.
 - **Reproducibility:** every benchmark in the README has a single shell command in `bench/` that regenerates it from scratch.
 
-### Portfolio
+### Communication & launch
 
 - README has the Pareto chart, the three claims, and a 30-second elevator pitch above the fold.
 - Architecture page links to FrugalGPT, RouteLLM, and AutoMix and explains how the project relates.
-- Public launch (HN / r/MachineLearning / LinkedIn) with the benchmark numbers.
-- At least one blog post explaining the eval methodology — this is the artifact that opens MLOps interview conversations.
+- Public launch (HN / r/MachineLearning) with the benchmark numbers.
+- At least one blog post explaining the eval methodology — the clearest articulation of the project's rigor.
 
 ---
 
 ## 8. Open questions
 
 - **Repo / package availability** — verify `cascadia` on GitHub, crates.io, npm, Docker Hub. Fall back to `cascadia-llm` or `cascadia-gateway` if taken. Reserve before publicizing.
-- **Hosting story** — pure self-host OSS, or self-host + optional managed offering? *Working assumption: pure OSS for portfolio purposes; managed adds founder-shaped complexity.*
+- **Hosting story** — pure self-host OSS, or self-host + optional managed offering? *Working assumption: pure OSS to keep scope tight; managed adds founder-shaped complexity.*
 - **First public deployment target** — is there a friendly real workload (personal Claude Code traffic? a small SaaS?) to be the first non-synthetic user?
 - **Design-system source for the dashboard** — build the design system in Figma first, then code; or borrow an existing one (shadcn/ui) and reverse-engineer into Figma? *Open — to discuss during Figma mock phase.*
 
@@ -359,7 +359,7 @@ That bar is now the gate for shipping the public launch (HN / r/MachineLearning 
 - **Complete** — every persona in `USERS.md` runs clean (no open findings beyond consciously-deferred items). All Phase-7 family items are landed (7, 7.1, 7.2, 7.3 ✅; live-smoke against the 4 real provider APIs deferred until real keys are rotated onto Railway).
 - **Perfect** — the friction points the persona suite has surfaced are all closed. No silent failures, no copy that admits "TODO," no surfaces that lead a curious reader to "is this still being worked on?"
 - **Resilient** — graceful degradation under the failure modes documented in `SECURITY.md`; the proxy never blocks on Postgres; the dashboard never empty-states on a transient API hiccup. The chaos posture in the README is the contract.
-- **Beautiful** — the visual surface (dashboard pages, Pareto chart, methodology blog) reads at recruiter / HN / interviewer pace without the reader needing to charitably interpret rough edges. The §6 portfolio audience persona runs are the load-bearing tests here.
+- **Beautiful** — the visual surface (dashboard pages, Pareto chart, methodology blog) reads at HN / first-time-visitor pace without the reader needing to charitably interpret rough edges. The §6 audience persona runs are the load-bearing tests here.
 - **Production-deployed** — live dev URL stays green on every page; bearer auth + calibrate password on Railway; rotation of the keys captured in the transcript before the launch; provider keys move from `placeholder-set-real-key-later` to real values; calibrate set sized appropriately (the Prolific 200-pair run is queued).
 - **Production-hardened** — `§8` audit findings closed, CORS closed by default, judge-prompt injection defenses live, calibration archive pseudonymized, GDPR/DSAR runbook complete with the `x-cascadia-request-id` correlation header.
 
@@ -567,7 +567,7 @@ A +0.35 swing in τ-b from the concision penalty alone. **Verbosity bias is real
 
 ### 2026-05-19 — Differentiation framing locked: Cascadia vs LiteLLM / Portkey
 
-Question that comes up in every recruiter conversation and HN comment thread: *"Isn't this just LiteLLM?"* The strategic answer locked here so the README, methodology blog, and elevator pitch can stay consistent.
+Question that comes up in every HN comment thread: *"Isn't this just LiteLLM?"* The strategic answer locked here so the README, methodology blog, and elevator pitch can stay consistent.
 
 **One-liner:** LiteLLM and Portkey are *provider plumbing* with human-authored routing rules. Cascadia is the layer that **learns what those rules should be** — by counterfactually scoring its own cascade decisions on live traffic and refitting per-cluster thresholds from the closed loop. They ask "where does this request go?". We ask "what's the cheapest model that still meets quality, and how do we know?"
 
@@ -577,7 +577,7 @@ Question that comes up in every recruiter conversation and HN comment thread: *"
 2. **Per-cluster online policy learning.** The bandit-style refit in [`services/policy-controller/`](services/policy-controller/) exists because there's a closed loop to learn from. Their config is static until a human edits the YAML.
 3. **Bias-corrected calibrated judge ensemble.** Position-bias correction, anti-self-preference, human-rated τ-b gating. Academic-rigor evaluation, not gateway-feature territory. Nobody in the gateway space ships this because nobody in the gateway space *measures quality honestly* — they report cost-saved, which is always a flattering number when nobody checks the quality side.
 
-**Honest read on where they win** (this is the bit that makes the differentiation credible in an interview — refuse to flinch from it):
+**Honest read on where they win** (this is the bit that makes the differentiation credible — refuse to flinch from it):
 
 - **LiteLLM:** 100+ providers, retries, fallback chains, caching (response + semantic), key management, virtual keys. Battle-tested at scale, 30k+ stars. Cascadia today supports one provider live (Phase 7 adds four more) and has no retry logic.
 - **Portkey:** polished hosted SaaS dashboard, prompt management, input/output guardrails. SaaS-grade UX. Cascadia ships behind your firewall and the operator UI is admittedly less polished.
@@ -587,7 +587,7 @@ Question that comes up in every recruiter conversation and HN comment thread: *"
 **Defensibility — the risk and the answer:** *what if LiteLLM just adds cascade routing?* Plausible. Two reasons it doesn't collapse the differentiation:
 1. **Eval methodology.** The Phase-5 ensemble + bias correction + human τ-b is genuinely academic-rigor work that LiteLLM hasn't shown interest in. Their culture is "more features," not "more honest measurement." Even if they ship cascade routing, the quality signal will likely be a single-LLM-judge with no calibration story.
 2. **Design center.** Closed-loop policy *learning* (data-driven) vs. config-driven routing rules is a different product philosophy. Adding it to LiteLLM isn't a feature — it's a different product.
-3. **Portfolio framing.** Cascadia's job as a portfolio project is the *methodology* — the rigorous evaluation, the closed loop, the honest acceptance gates. Even if every feature ends up commoditized, the *story* of building it from scratch with academic rigor lives on the README + blog + GitHub history. Which is what gets an MLOps job.
+3. **The durable core.** Cascadia's durable contribution is the *methodology* — the rigorous evaluation, the closed loop, the honest acceptance gates. Even if every feature ends up commoditized, the *story* of building it from scratch with academic rigor lives on the README + blog + GitHub history.
 
 **30-second elevator pitch (canonical):**
 
@@ -698,7 +698,7 @@ The Phase-5 acceptance criterion (Kendall's τ-b ≥ 0.7 vs humans) is currently
 
 **Decisions Chris made up-front:**
 - Sampling: **active learning** (round 1 stratified seed → round 2+ uncertainty-weighted by `(1-conf)` + tie-proximity + position-bias estimate). The simpler alternatives (stratified-by-cluster only, stratified-by-confidence only) were rejected as leaving signal on the table.
-- Labeling tool: **Next.js app in this repo** rather than Argilla / Label Studio / Google Forms. Owned artifact for the portfolio, shared Cascadia design tokens with the dashboard, ~1 day of work.
+- Labeling tool: **Next.js app in this repo** rather than Argilla / Label Studio / Google Forms. Owned in-repo artifact, shared Cascadia design tokens with the dashboard, ~1 day of work.
 - Reviewers: **Chris + 1 friend** now ($0). Memory `[[cascadia-prolific-deferred]]` saved as a reminder to upgrade to Prolific/Surge/Scale before public launch.
 - General preference: memory `[[feedback-gold-standard-budget]]` — propose gold-standard approaches by default; only retreat if cost > $25.
 
@@ -896,7 +896,7 @@ Three load-bearing claims (counterfactual shadow routing, per-cluster cascade po
 Pivoted from "scaffold the Rust project first" to "design first, then code." **Why:** Chris's call. PLAN.md and the design spec are explicit prerequisites; code scaffolding waits until Figma mocks are approved.
 
 ### 2026-05-18 — First mock target: landing / README hero (not dashboard)
-First Figma artifact will be the landing page / README hero, not a dashboard view. **Why:** Chris's call. The landing is the highest-leverage portfolio surface (recruiter first-impression) and establishes the design language that the dashboard mocks will inherit.
+First Figma artifact will be the landing page / README hero, not a dashboard view. **Why:** Chris's call. The landing is the highest-leverage surface (a visitor's first impression) and establishes the design language that the dashboard mocks will inherit.
 
 ### 2026-05-18 — Hybrid design workflow: markdown spec → Figma
 Design workflow is "spec first in markdown, then drive Figma via MCP" rather than going straight to Figma. **Why:** Chris's call. The markdown spec is faster to iterate on for structure/copy/IA, and gives the Figma work a clear brief so mocks rarely need restarts.
@@ -908,7 +908,7 @@ Spec written at `docs/design/landing-hero-spec.md`. Established: dense-technical
 Chris approved the spec without changes. Open questions in spec §9 resolved by taking Claude's recommendations as defaults: H1 is the wordmark "Cascadia"; Pareto chart uses canned demo data with a clear "demo data" inset label; GitHub org placeholder `cascadia-llm` until repo creation confirms canonical name; typographic-only wordmark for Phase 0 (no logomark); no outside design work for Phase 0. **Why:** Chris's call to use the recommendations as defaults so Figma work can begin without further blocking. Any of these can be revised once mocks reveal a reason to change.
 
 ### 2026-05-18 — Full views inventory + per-view specs (27 views, blanket-approved)
-Chris requested a comprehensive `VIEWS.md` inventory of every view required to satisfy Cascadia's architecture (1 view = 1 mock), per-view specs written, then resume mocking. **Why:** mocking the full surface area before code lets us validate IA, discover shared components, and produces a portfolio artifact that looks like a real product (~25 screens) rather than three nice screens. Inventory: `docs/design/VIEWS.md`. Specs: `docs/design/views/*.md` (26 files) plus the existing `landing-hero-spec.md`. Tiers: T1 (7 portfolio-essential), T2 (7 strong support), T3 (8 round-out), T4 (5 commodity). Specs are blanket-approved by Chris — no per-spec review required. Mock-build order: Landing (in progress) → Overview → Pareto → Clusters + Request detail → Policy editor + Health → Tier 2 → Tier 3/4.
+Chris requested a comprehensive `VIEWS.md` inventory of every view required to satisfy Cascadia's architecture (1 view = 1 mock), per-view specs written, then resume mocking. **Why:** mocking the full surface area before code lets us validate IA, discover shared components, and produces an artifact that looks like a real product (~25 screens) rather than three nice screens. Inventory: `docs/design/VIEWS.md`. Specs: `docs/design/views/*.md` (26 files) plus the existing `landing-hero-spec.md`. Tiers: T1 (7 essential), T2 (7 strong support), T3 (8 round-out), T4 (5 commodity). Specs are blanket-approved by Chris — no per-spec review required. Mock-build order: Landing (in progress) → Overview → Pareto → Clusters + Request detail → Policy editor + Health → Tier 2 → Tier 3/4.
 
 ### 2026-05-18 — Figma file created, color variables installed
 File `Cascadia Design` created at https://www.figma.com/design/ii8hoRoudETDbhDXsG0lax. `Cascadia Colors` variable collection installed with Dark + Light modes covering all 10 tokens from spec §2.2. **Why:** establishes the design-token foundation that every mock will bind to. Subsequent mocks must use these variables (no hardcoded hex values).
@@ -917,10 +917,10 @@ File `Cascadia Design` created at https://www.figma.com/design/ii8hoRoudETDbhDXs
 Inter Tight is not in Figma's default font library. Fell back to Inter for all display sizes, with tighter tracking (-3% on H1, -2% on H2) to compensate for the lost optical condensing. `landing-hero-spec.md §2.3` updated. 9 text styles installed: Display/H1, Display/H2, Heading/H3, Body/Subhead, Body/L, Body/S, Mono/Body, Mono/Block, Eyebrow. **Why:** unblocks Figma work without requiring Chris to manually install a font in his Figma settings. Visual difference at hero sizes is small. Revisit if/when Figma adds Inter Tight to its library, or if Chris installs it locally.
 
 ### 2026-05-18 — Landing hero mock v0 complete
-Hero section (the highest-leverage portfolio artifact) is mocked in Figma at https://www.figma.com/design/ii8hoRoudETDbhDXsG0lax — frame `Hero — Landing` (node 5:2). Left column: eyebrow, H1 wordmark, subhead, primary + secondary CTAs, docker quick-start snippet. Right column: 480x360 Pareto frontier chart with 7 reference points (Haiku, GPT-4o-mini, Static cascade, GPT-4o, Sonnet, Opus), a smooth Bezier frontier curve, and the Cascadia learned operating point at $0.85/1k · 97% with a ring + callout. "Demo data" inset, axis labels, cost x-axis (log scale $0.10–$30), quality y-axis (80–100%). All fills/strokes/radii bound to design-system variables. Dominated-point labels (Static cascade, GPT-4o) were removed in iteration after they crowded the Cascadia callout — dots remain for visual comparison. **Why:** delivers the single most important screenshot for the whole portfolio. Next: remaining landing sections (three claims, quick start, how-it-works, benchmarks, comparison, methodology, footer) per `landing-hero-spec.md` §4.3–§4.9, then move to Overview dashboard per mock-build order in `VIEWS.md`.
+Hero section (the highest-leverage artifact) is mocked in Figma at https://www.figma.com/design/ii8hoRoudETDbhDXsG0lax — frame `Hero — Landing` (node 5:2). Left column: eyebrow, H1 wordmark, subhead, primary + secondary CTAs, docker quick-start snippet. Right column: 480x360 Pareto frontier chart with 7 reference points (Haiku, GPT-4o-mini, Static cascade, GPT-4o, Sonnet, Opus), a smooth Bezier frontier curve, and the Cascadia learned operating point at $0.85/1k · 97% with a ring + callout. "Demo data" inset, axis labels, cost x-axis (log scale $0.10–$30), quality y-axis (80–100%). All fills/strokes/radii bound to design-system variables. Dominated-point labels (Static cascade, GPT-4o) were removed in iteration after they crowded the Cascadia callout — dots remain for visual comparison. **Why:** delivers the single most important screenshot for the whole project. Next: remaining landing sections (three claims, quick start, how-it-works, benchmarks, comparison, methodology, footer) per `landing-hero-spec.md` §4.3–§4.9, then move to Overview dashboard per mock-build order in `VIEWS.md`.
 
 ### 2026-05-18 — Landing page mock v1 complete (all 9 sections)
-All landing-page sections per `landing-hero-spec.md` are now built in the Figma file. Vertical stack of top-level frames spanning y=44 to y=5549: top nav (15:2), hero (5:2), three-claims (16:2), quick-start (17:2), how-it-works (19:2), headline-numbers (20:2), comparison table (21:2), methodology callout (22:2), footer (23:2). Each section uses bound design-system tokens (no hardcoded values), follows the spec's content, and includes Phase-0 honesty markers (the headline benchmarks are labeled targets, not measured). Comparison table has 10 data rows with 3 claim rows visually bolded in accent/primary. How-it-works includes a simple architecture diagram with hot path, shadow path, and learning-loop arrows in distinct colors. **Why:** completes the highest-leverage portfolio surface — the landing is what recruiters see first. Next per `VIEWS.md` mock-build order: Overview dashboard (which will establish the dashboard shell that 16 other views inherit).
+All landing-page sections per `landing-hero-spec.md` are now built in the Figma file. Vertical stack of top-level frames spanning y=44 to y=5549: top nav (15:2), hero (5:2), three-claims (16:2), quick-start (17:2), how-it-works (19:2), headline-numbers (20:2), comparison table (21:2), methodology callout (22:2), footer (23:2). Each section uses bound design-system tokens (no hardcoded values), follows the spec's content, and includes Phase-0 honesty markers (the headline benchmarks are labeled targets, not measured). Comparison table has 10 data rows with 3 claim rows visually bolded in accent/primary. How-it-works includes a simple architecture diagram with hot path, shadow path, and learning-loop arrows in distinct colors. **Why:** completes the highest-leverage surface — the landing is what visitors see first. Next per `VIEWS.md` mock-build order: Overview dashboard (which will establish the dashboard shell that 16 other views inherit).
 
 ### 2026-05-19 — Phase 1 started: MVP proxy skeleton landed
 Repo bootstrap + Rust proxy skeleton in place:
