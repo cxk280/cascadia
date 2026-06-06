@@ -34,10 +34,10 @@
 
   <!-- rule box -->
   <rect x="470" y="196" width="290" height="74" rx="8" fill="#ffffff" stroke="#d1d5db"/>
-  <text x="485" y="216" font-size="11" font-weight="600" fill="#111827">refit rule (per cluster, every interval):</text>
-  <text x="485" y="234" font-size="11" fill="#166534" font-family="ui-monospace, monospace">q̄ &gt; t+m → τ −= step   (cheap winning → cheaper)</text>
-  <text x="485" y="250" font-size="11" fill="#b45309" font-family="ui-monospace, monospace">q̄ &lt; t−m → τ += step   (cheap losing → safer)</text>
-  <text x="485" y="266" font-size="11" fill="#6b7280" font-family="ui-monospace, monospace">else: hold.  clamp τ ∈ [0.3, 0.95]</text>
+  <text x="485" y="215" font-size="11" font-weight="600" fill="#111827">refit rule (per cluster, every interval):</text>
+  <text x="485" y="233" font-size="9.5" fill="#166534" font-family="ui-monospace, monospace">q̄ &gt; t+m → τ −= step  (cheap winning → cheaper)</text>
+  <text x="485" y="249" font-size="9.5" fill="#b45309" font-family="ui-monospace, monospace">q̄ &lt; t−m → τ += step  (cheap losing → safer)</text>
+  <text x="485" y="265" font-size="9.5" fill="#6b7280" font-family="ui-monospace, monospace">else: hold.  clamp τ ∈ [0.3, 0.95]</text>
 
   <defs>
     <marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#6b7280"/></marker>
