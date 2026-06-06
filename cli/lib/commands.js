@@ -13,7 +13,7 @@ const {
   pickPort,
   waitForHttp,
 } = require("./util");
-const { resolveSource, DEFAULT_REPO } = require("./source");
+const { resolveSource, findLocalCheckout } = require("./source");
 const {
   dockerReady,
   compose,
@@ -21,7 +21,17 @@ const {
   LIVE_FILE,
   DEMO_PROJECT,
   LIVE_PROJECT,
+  BUNDLED_DEMO_FILE,
+  bundledDemoExists,
 } = require("./docker");
+
+// Prebuilt demo images live in GHCR under the repo owner's namespace. The
+// default `cascadia demo` PULLS these (no git, no local build); `--build`
+// builds from source instead. PUBLISHED_IMAGE_TAG is bumped in lockstep with
+// the image release published by CI (see .circleci publish-images); override at
+// runtime with CASCADIA_TAG / CASCADIA_REGISTRY.
+const DEFAULT_REGISTRY = "ghcr.io/cxk280/";
+const PUBLISHED_IMAGE_TAG = "v0.1.0";
 
 // --- demo traffic -----------------------------------------------------------
 // A SMALL, fixed set of prompts on purpose. Cluster assignment is a hash of the
@@ -108,9 +118,24 @@ function promptHidden(query) {
 
 // --- commands ---------------------------------------------------------------
 
+// Where the demo compose file lives, WITHOUT ever cloning: the bundled copy in
+// the published package first, else a local checkout. Returns {src, file} for
+// compose(), or null if neither is available. `src` is null for the bundled
+// path (compose() resolves the absolute file and picks a cwd).
+function demoComposeLocation() {
+  if (bundledDemoExists()) return { src: null, file: BUNDLED_DEMO_FILE };
+  const local = findLocalCheckout();
+  if (local) return { src: local, file: DEMO_FILE };
+  return null;
+}
+
 async function cmdDemo(flags) {
   if (!dockerReady()) return 1;
-  const src = await resolveSource();
+
+  // Two modes:
+  //   default → PULL prebuilt images from the registry (no git, no build).
+  //   --build → build from source (needs a checkout; clones on a cold run).
+  const wantBuild = flags.build === true;
 
   const proxyPort = await pickPort(Number(process.env.CASCADIA_PROXY_PORT) || 8080);
   const dashPort = await pickPort(Number(process.env.CASCADIA_DASHBOARD_PORT) || 3000);
@@ -120,13 +145,42 @@ async function cmdDemo(flags) {
     CASCADIA_DASHBOARD_PORT: String(dashPort),
   };
 
-  const upArgs = ["up", "-d"];
-  if (flags.build !== false) {
-    upArgs.push("--build");
-    log(c.dim("First run builds images from source (a few minutes); cached afterward."));
+  // `composeArgs` lets the build path keep using the in-tree compose file and
+  // the pull path use the bundled copy (absolute path, no checkout needed).
+  let src, demoFile;
+  if (wantBuild) {
+    src = await resolveSource(); // may clone; requires git on a cold run
+    demoFile = DEMO_FILE;
+  } else {
+    const loc = demoComposeLocation();
+    if (!loc) {
+      fail("No bundled compose file and no local checkout found. Reinstall the package, or run `cascadia demo --build`.");
+      return 1;
+    }
+    src = loc.src;
+    demoFile = loc.file;
+    env.CASCADIA_REGISTRY = process.env.CASCADIA_REGISTRY || DEFAULT_REGISTRY;
+    env.CASCADIA_TAG = process.env.CASCADIA_TAG || PUBLISHED_IMAGE_TAG;
   }
+
+  if (wantBuild) {
+    log(c.dim("Building images from source (a few minutes); cached afterward."));
+  } else {
+    // Pull explicitly so a missing image fails loudly here instead of silently
+    // falling back to an in-place build (compose `up` builds services that have
+    // a build: section when their image is absent).
+    step(`Pulling prebuilt images (${env.CASCADIA_REGISTRY}…:${env.CASCADIA_TAG})…`);
+    const pull = await compose(src, demoFile, DEMO_PROJECT, ["pull"], { env });
+    if (pull !== 0) {
+      fail(`Could not pull prebuilt images for tag '${env.CASCADIA_TAG}'.`);
+      log(c.dim("   Build from source instead with:  cascadia demo --build"));
+      return pull;
+    }
+  }
+
+  const upArgs = wantBuild ? ["up", "-d", "--build"] : ["up", "-d", "--no-build"];
   step("Starting the demo stack…");
-  const code = await compose(src, DEMO_FILE, DEMO_PROJECT, upArgs, { env });
+  const code = await compose(src, demoFile, DEMO_PROJECT, upArgs, { env });
   if (code !== 0) {
     fail("docker compose up failed.");
     return code;
@@ -160,7 +214,7 @@ async function cmdDemo(flags) {
   log("");
   log(c.dim("   The dashboard is pre-populated with a representative frontier, and"));
   log(c.dim("   the controller refits thresholds from it every ~30s. Push your own"));
-  log(c.dim("   live requests with:  cascadia demo --no-build --traffic 60"));
+  log(c.dim("   live requests with:  cascadia demo --traffic 60"));
   log("");
   log(c.dim("   Stop + wipe:  cascadia down       Tail logs:  cascadia logs"));
   return 0;
@@ -213,15 +267,21 @@ async function cmdUp(flags) {
 
 async function cmdDown(flags) {
   if (!dockerReady()) return 1;
-  const src = await resolveSource();
   const live = flags.live || flags.all;
   const demo = !flags.live || flags.all;
   let code = 0;
   if (demo) {
-    step("Tearing down the demo stack (and its volume)…");
-    code = (await compose(src, DEMO_FILE, DEMO_PROJECT, ["down", "-v"])) || code;
+    // No clone for teardown: bundled compose, else a local checkout.
+    const loc = demoComposeLocation();
+    if (loc) {
+      step("Tearing down the demo stack (and its volume)…");
+      code = (await compose(loc.src, loc.file, DEMO_PROJECT, ["down", "-v"])) || code;
+    } else if (!live) {
+      warn("No demo compose file found to tear down.");
+    }
   }
   if (live) {
+    const src = await resolveSource(); // live stack only ships from source
     step("Tearing down the live stack (and its volume)…");
     code = (await compose(src, LIVE_FILE, LIVE_PROJECT, ["down", "-v"])) || code;
   }
@@ -231,11 +291,17 @@ async function cmdDown(flags) {
 
 async function cmdLogs(flags, positional) {
   if (!dockerReady()) return 1;
-  const src = await resolveSource();
-  const file = flags.live ? LIVE_FILE : DEMO_FILE;
-  const project = flags.live ? LIVE_PROJECT : DEMO_PROJECT;
   const args = ["logs", "-f", "--tail", "60", ...positional];
-  return compose(src, file, project, args);
+  if (flags.live) {
+    const src = await resolveSource();
+    return compose(src, LIVE_FILE, LIVE_PROJECT, args);
+  }
+  const loc = demoComposeLocation();
+  if (!loc) {
+    fail("No demo compose file found.");
+    return 1;
+  }
+  return compose(loc.src, loc.file, DEMO_PROJECT, args);
 }
 
 async function cmdDoctor() {
@@ -260,7 +326,7 @@ async function cmdDoctor() {
     commandExists("docker", ["compose", "version"]),
     "install the Compose plugin"
   );
-  check("git available", commandExists("git"), "needed only for cold `npx cascadia`");
+  check("git available", commandExists("git"), "needed only for `cascadia demo --build` / `cascadia up`");
 
   for (const p of [8080, 3000]) {
     const used = await portInUse(p);
@@ -268,13 +334,21 @@ async function cmdDoctor() {
     else ok(`port ${p} free`);
   }
 
-  try {
-    const src = await resolveSource();
-    ok(`Cascadia source: ${src}`);
-  } catch (e) {
-    fail(`Cascadia source: ${e.message}`);
-    log(c.dim(`   (cold runs clone from ${DEFAULT_REPO}; set CASCADIA_REPO/CASCADIA_HOME to override)`));
-    allGood = false;
+  // Default demo path: bundled compose + prebuilt images — no clone needed.
+  if (bundledDemoExists()) {
+    ok("Demo compose: bundled (pulls prebuilt images — no git, no build)");
+  } else {
+    try {
+      const local = findLocalCheckout();
+      if (local) ok(`Demo compose: local checkout (${local})`);
+      else {
+        warn("Demo compose: no bundled file and no checkout — reinstall, or use `--build`");
+      }
+    } catch (e) {
+      fail(`Cascadia source: ${e.message}`);
+      log(c.dim(`   (set CASCADIA_HOME to a checkout, or reinstall the package)`));
+      allGood = false;
+    }
   }
 
   log("");

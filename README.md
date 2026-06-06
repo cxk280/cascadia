@@ -25,7 +25,7 @@ No API key. No account. No sign-up. No cost. If you have **[Docker](https://docs
 npx cascadia-gateway demo
 ```
 
-That single command brings up the whole system in Docker and points it at a **built-in mock model** instead of a real provider — so it's completely free and works offline. It then sends a little sample traffic and prints a link. Open it:
+That single command **pulls prebuilt images** and brings up the whole system in Docker, pointed at a **built-in mock model** instead of a real provider — so it's completely free. No git checkout, no local compile. It then sends a little sample traffic and prints a link. Open it:
 
 **→ [http://localhost:3000](http://localhost:3000)** — log in with the demo account:
 
@@ -41,7 +41,8 @@ That single command brings up the whole system in Docker and points it at a **bu
 
 | | |
 |---|---|
-| First run is slow? | It compiles the services the first time (a few minutes); every run after is instant. |
+| First run pulls images | Six images download the first time, then start instantly; cached after. |
+| Build from source? | `npx cascadia-gateway demo --build` builds locally instead of pulling (needs git + a checkout). |
 | Something off? | `npx cascadia-gateway doctor` checks Docker, ports, and the rest. |
 | Done? | `npx cascadia-gateway down` stops everything and wipes the demo's data. |
 | Want real models? | `npx cascadia-gateway up` asks for your OpenAI + Anthropic keys and runs the same stack live (this spends real API budget). |
@@ -115,7 +116,7 @@ Three things competitors structurally don't do: **counterfactual shadow routing*
 
 ## Quick start
 
-The fastest path is the keyless `npx cascadia-gateway demo` above — only Docker + Node, no keys, no cost. `npx cascadia-gateway up` runs the same stack against real providers (it prompts for your keys). Both wrap Docker Compose; the launcher lives in [`cli/`](cli/README.md).
+The fastest path is the keyless `npx cascadia-gateway demo` above — only Docker + Node, no keys, no cost. It **pulls prebuilt images** from `ghcr.io/cxk280` (override with `CASCADIA_REGISTRY` / `CASCADIA_TAG`); add `--build` to build from source instead (needs git + a checkout). `npx cascadia-gateway up` runs the same stack against real providers (it prompts for your keys). Both wrap Docker Compose; the launcher lives in [`cli/`](cli/README.md).
 
 **From source (contributors).** If you have the Rust + Python/uv + Node toolchain and want host-process iteration instead of containers:
 

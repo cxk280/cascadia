@@ -24,9 +24,13 @@ The closed loop is real: the judge scores shadow pairs and the policy controller
 refits per-cluster thresholds every ~30s, which the proxy hot-reloads via its
 Postgres policy store. Watch the Pareto chart and thresholds move on their own.
 
-First run builds images from source (a few minutes); they're cached after.
+First run **pulls six prebuilt images** from `ghcr.io/cxk280` (no git, no compile),
+then starts instantly; cached after. Override the source with `CASCADIA_REGISTRY`
+(registry prefix, trailing slash) and `CASCADIA_TAG`.
 
-Flags: `--no-build`, `--no-traffic`, `--traffic N`.
+Flags:
+- `--build` — build images from source instead of pulling (needs git + a checkout).
+- `--traffic N` / `--no-traffic` — drive (or skip) live mock traffic.
 
 ## `up` — self-host for real
 
@@ -35,16 +39,19 @@ judge), or reads them from the environment, and runs the same stack against real
 providers. **This spends real API budget.** Keys are passed to the containers
 in memory, not written to disk.
 
-## How it finds the source
+## How it finds the compose file
 
-The launcher orchestrates the compose files + Dockerfiles in the Cascadia repo.
-It uses, in order: `$CASCADIA_HOME` → a checkout it's running inside → a shallow
-`git clone` into `~/.cascadia/checkout` (override the URL with `$CASCADIA_REPO`).
+The default `demo` runs the demo compose file **bundled inside this package** and
+pulls prebuilt images — no source tree required. The build-from-source paths
+(`demo --build`, `up`) need the Cascadia repo, resolved in order: `$CASCADIA_HOME`
+→ a checkout it's running inside → a shallow `git clone` into `~/.cascadia/checkout`
+(override the URL with `$CASCADIA_REPO`).
 
 ## Requirements
 
 - Docker (with the Compose v2 plugin) and a running daemon
 - Node ≥ 18
-- git (only for the cold `npx` clone path)
+- git — only for `demo --build` and `up` (building from source); **not** for the
+  default pull-based demo
 
 Run `npx cascadia-gateway doctor` to verify all of the above.

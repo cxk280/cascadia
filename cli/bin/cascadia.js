@@ -21,11 +21,12 @@ ${c.bold("Usage:")} cascadia <command> [options]
 
 ${c.bold("Commands:")}
   demo            Keyless, zero-cost demo of the live cost/quality closed loop.
-                  Only needs Docker. Builds images on first run, then opens a
-                  dashboard at http://localhost:3000.
-                    --no-build      reuse existing images (skip the build)
+                  Only needs Docker. Pulls prebuilt images (no git, no build),
+                  then opens a dashboard at http://localhost:3000.
+                    --build         build images from source instead of pulling
+                                    (needs a checkout; clones on a cold run)
+                    --traffic N     drive N live requests through the proxy
                     --no-traffic    don't auto-drive demo traffic
-                    --traffic N     drive N requests (default 60)
   up | start      Self-host against REAL providers (spends API budget). Prompts
                   for OpenAI + Anthropic keys (or reads them from the env).
                     --no-build      reuse existing images
@@ -37,8 +38,10 @@ ${c.bold("Commands:")}
   doctor          Check Docker / ports / source before running.
 
 ${c.bold("Environment:")}
-  CASCADIA_HOME   path to a Cascadia checkout (else auto-detected or cloned)
-  CASCADIA_REPO   git URL to clone on a cold run
+  CASCADIA_REGISTRY  image registry prefix to pull from (default ghcr.io/cxk280/)
+  CASCADIA_TAG       image tag to pull (default: the launcher's pinned release)
+  CASCADIA_HOME      path to a Cascadia checkout (for --build / up)
+  CASCADIA_REPO      git URL to clone on a cold --build / up
   CASCADIA_PROXY_PORT / CASCADIA_DASHBOARD_PORT   override published ports
 `;
 

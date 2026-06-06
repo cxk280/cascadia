@@ -139,20 +139,90 @@ jobs:
                 --service "$svc"
             done
 
+  # Launcher (cli/) sanity: the bundled demo compose must match the in-tree
+  # source of truth, and the no-dependency CLI must load + render help.
+  launcher:
+    executor: node
+    steps:
+      - checkout
+      - run:
+          name: Bundled compose is in sync
+          working_directory: cli
+          command: node scripts/sync-assets.js --check
+      - run:
+          name: CLI loads + help renders
+          working_directory: cli
+          command: |
+            node -e "require('./lib/commands');require('./lib/docker');require('./lib/source')"
+            node bin/cascadia.js help >/dev/null
+
+  # Build + push the 6 demo/live images as multi-arch (amd64 + arm64) to GHCR.
+  # Runs ONLY on a `v*` git tag, after the test jobs pass. A machine executor is
+  # required: the container `docker:` executors can't run buildx + QEMU.
+  # Needs CircleCI project env vars GHCR_USER + GHCR_TOKEN (PAT, write:packages).
+  publish-images:
+    machine:
+      image: ubuntu-2204:current
+    steps:
+      - checkout
+      - run:
+          name: Log in to GHCR
+          command: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+      - run:
+          name: Enable multi-arch (QEMU + buildx)
+          command: |
+            docker run --privileged --rm tonistiigi/binfmt --install all
+            docker buildx create --use --name cascadia-builder
+      - run:
+          name: Build + push (amd64 + arm64)
+          command: |
+            set -euo pipefail
+            REG=ghcr.io/cxk280
+            for s in proxy mock-upstream judge-worker policy-controller dashboard-api dashboard; do
+              echo ">> building cascadia-$s"
+              docker buildx build --platform linux/amd64,linux/arm64 \
+                -f deploy/docker/$s.Dockerfile \
+                -t "$REG/cascadia-$s:${CIRCLE_TAG}" \
+                -t "$REG/cascadia-$s:latest" \
+                --push .
+            done
+
 workflows:
   build-test-deploy:
     jobs:
-      - rust
+      - rust:
+          filters: { tags: { only: /^v.*/ } }
       - python:
           name: test-judge-worker
           service: judge-worker
+          filters: { tags: { only: /^v.*/ } }
       - python:
           name: test-policy-controller
           service: policy-controller
+          filters: { tags: { only: /^v.*/ } }
       - python:
           name: test-dashboard-api
           service: dashboard-api
-      - dashboard
+          filters: { tags: { only: /^v.*/ } }
+      - dashboard:
+          filters: { tags: { only: /^v.*/ } }
+      - launcher:
+          filters: { tags: { only: /^v.*/ } }
+
+      # --- release: build + push images on a v* tag, after tests pass ---
+      - publish-images:
+          requires:
+            - rust
+            - test-judge-worker
+            - test-policy-controller
+            - test-dashboard-api
+            - dashboard
+            - launcher
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
 
       # --- dev: automatic on merge to main, after tests pass ---
       - deploy:

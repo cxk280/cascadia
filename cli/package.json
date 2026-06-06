@@ -1,6 +1,6 @@
 {
   "name": "cascadia-gateway",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "One-command launcher for Cascadia — the self-hostable LLM cascade gateway. `npx cascadia-gateway demo` brings up a keyless, zero-cost demo of the live cost/quality closed loop.",
   "bin": {
     "cascadia": "bin/cascadia.js"
@@ -9,8 +9,14 @@
   "files": [
     "bin",
     "lib",
+    "assets",
     "README.md"
   ],
+  "scripts": {
+    "sync-assets": "node scripts/sync-assets.js",
+    "check-assets": "node scripts/sync-assets.js --check",
+    "prepack": "node scripts/sync-assets.js"
+  },
   "engines": {
     "node": ">=18"
   },

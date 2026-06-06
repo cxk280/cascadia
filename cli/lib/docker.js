@@ -35,22 +35,39 @@ function dockerReady() {
 }
 
 // Run a compose command for a given file + project, inheriting stdio.
-// `sourceDir` is the Cascadia checkout root; the file path is relative to it.
+// `sourceDir` is the Cascadia checkout root; `relFile` is resolved against it,
+// UNLESS it's already absolute (the bundled-compose pull path passes an absolute
+// path with no checkout). When the args include `--build` we force compose's
+// `--progress plain` renderer: the default `tty` renderer redraws the per-service
+// status block in place via cursor-up escapes, which flickers badly during the
+// long multi-image build. `plain` is linear/append-only — no flicker.
 function compose(sourceDir, relFile, project, args, opts = {}) {
   const runner = composeRunner();
   if (!runner) {
     warn("docker compose unavailable");
     return Promise.resolve(127);
   }
-  const file = path.join(sourceDir, relFile);
-  const argv = [...runner.base, "-f", file, "-p", project, ...args];
-  return run(runner.cmd, argv, { cwd: sourceDir, ...opts });
+  const file = path.isAbsolute(relFile) ? relFile : path.join(sourceDir, relFile);
+  const cwd = sourceDir || path.dirname(file);
+  const globals = args.includes("--build") ? ["--progress", "plain"] : [];
+  const argv = [...runner.base, ...globals, "-f", file, "-p", project, ...args];
+  return run(runner.cmd, argv, { cwd, ...opts });
 }
 
 const DEMO_FILE = path.join("deploy", "compose", "docker-compose.demo.yml");
 const LIVE_FILE = path.join("deploy", "compose", "docker-compose.full.yml");
 const DEMO_PROJECT = "cascadia-demo";
 const LIVE_PROJECT = "cascadia-live";
+
+// The demo compose file is also bundled INTO the published npm package (see
+// scripts/sync-assets.js + the `prepack` hook) so a cold `npx cascadia-gateway
+// demo` can pull prebuilt images with no git clone. Resolved absolute so it
+// works regardless of cwd.
+const BUNDLED_DEMO_FILE = path.resolve(__dirname, "..", "assets", "docker-compose.demo.yml");
+
+function bundledDemoExists() {
+  return require("node:fs").existsSync(BUNDLED_DEMO_FILE);
+}
 
 module.exports = {
   dockerReady,
@@ -59,4 +76,6 @@ module.exports = {
   LIVE_FILE,
   DEMO_PROJECT,
   LIVE_PROJECT,
+  BUNDLED_DEMO_FILE,
+  bundledDemoExists,
 };
