@@ -155,6 +155,19 @@ jobs:
           command: |
             node -e "require('./lib/commands');require('./lib/docker');require('./lib/source')"
             node bin/cascadia.js help >/dev/null
+      - run:
+          name: On a v* tag, the tag must match the launcher version
+          working_directory: cli
+          command: |
+            # The image tag is tied to the launcher version (launcher x.y.z pulls
+            # vx.y.z images). On a release tag, refuse to build if they diverge.
+            if [ -n "${CIRCLE_TAG:-}" ]; then
+              want="v$(node -p "require('./package.json').version")"
+              if [ "$CIRCLE_TAG" != "$want" ]; then
+                echo "Tag $CIRCLE_TAG != launcher version $want — bump cli/package.json or fix the tag."; exit 1
+              fi
+              echo "OK: $CIRCLE_TAG matches launcher version."
+            fi
 
   # Build all 6 images for ONE architecture NATIVELY (no QEMU) and push each by
   # DIGEST (no tag). Fanned out across an x86 runner and a CircleCI Arm runner in
