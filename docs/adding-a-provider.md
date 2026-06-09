@@ -1,53 +1,45 @@
 # Adding a new provider
 
-Cascadia ships native support for OpenAI, Anthropic, Groq, and xAI. To use *another* provider — Mistral, DeepSeek, Together, Fireworks, Perplexity, vLLM, etc. — **start here.** The answer is usually a one-line config change, not a new code module.
+Cascadia ships native support for OpenAI, Anthropic, Groq, and xAI, and a **dynamic provider registry** for everything else — HuggingFace, Together, Fireworks, OpenRouter, Mistral, DeepSeek, a local vLLM, your own gateway. Adding one of those is a **config change, not a code module**: name it in `CASCADIA_PROVIDERS`, give it a base URL + key, and use its prefix in your policy.
+
+> **Why a registry?** Earlier Cascadia had a closed `Provider` enum and one base URL per adapter, so a single proxy couldn't run (say) a HuggingFace cheap tier escalating to an OpenAI expensive tier. The registry (PLAN.md §9, 2026-06-09) makes each provider its own entry with its own base URL + key, so mixed-provider cascades work in one process. The §9 hard-fail still holds: an unconfigured `provider/` prefix fails loudly at boot and on every policy hot-reload — it never silently mis-routes.
 
 ## Decision tree
 
 ```
-                ┌────────────────────────────────────────────────┐
-                │ What is the provider's wire format?            │
-                └─────────────────────┬──────────────────────────┘
-                                      │
-              ┌───────────────────────┴───────────────────────┐
-              ▼                                               ▼
-   OpenAI's /v1/chat/completions               Custom (Anthropic Messages,
-   (Mistral, DeepSeek, Together,                Gemini generateContent,
-    Fireworks, Perplexity, vLLM,                Bedrock native, etc.)
-    most "OpenAI-compatible" hosts)
-              │                                               │
-              ▼                                               ▼
-   ✅ NO CODE CHANGE.                             ⚠ Open an issue first.
-   Override CASCADIA_OPENAI_BASE_URL              See "Adding a Provider
-   and use `openai/<model>` in policy.            variant" below.
+              ┌────────────────────────────────────────────────┐
+              │ What wire format does the provider speak?      │
+              └─────────────────────┬──────────────────────────┘
+                                    │
+        ┌───────────────────────────┼───────────────────────────┐
+        ▼                           ▼                            ▼
+ OpenAI /v1/chat/completions  Anthropic /v1/messages     Something else
+ (HuggingFace router,         (a private Claude-shape     (Gemini generateContent,
+  Together, Fireworks,         host / proxy)               Bedrock native, …)
+  vLLM, Mistral, …)
+        │                           │                            │
+        ▼                           ▼                            ▼
+ ✅ Path A — registry entry,  ✅ Path A — registry entry,  ⚠ Path B — new `Wire`
+   WIRE=openai (default).       WIRE=anthropic.              variant + adapter.
+   NO CODE CHANGE.              NO CODE CHANGE.              Open an issue first.
 ```
 
-## Path A — Provider speaks OpenAI's chat-completions shape
+The vast majority of "add provider X" requests are **Path A** — Cascadia already speaks both the OpenAI and Anthropic wire formats, and Path A picks one.
 
-This is the right path for ≥90% of "add provider X" requests. Mistral, DeepSeek, Together, Fireworks, Perplexity, and most vLLM / Ray-Serve / Together-style hosts all expose `POST /v1/chat/completions` with the OpenAI request and response shape verbatim. Cascadia's `Provider::OpenAI` adapter dials whatever URL you give it, sends the OpenAI-shape body, parses the OpenAI-shape response.
+## Path A — add a named provider via the registry (no code change)
 
-### ⚠ Operational constraint — read this before designing your clusters
-
-**One proxy instance dials one base URL per adapter.** That means a single Cascadia process *cannot* run a Mistral cheap tier escalating to OpenAI's gpt-4o expensive tier — both tiers share the `CASCADIA_OPENAI_BASE_URL`. The cascade still works at the policy level (you can have `openai/mistral-small` cheap and `openai/gpt-4o` expensive in the same cluster), but only one of those URLs is reachable per proxy.
-
-**Workarounds, in order of operational simplicity:**
-
-1. **Stay within one OpenAI-compatible host.** Most realistic cascades are cheap-tier-vs-expensive-tier within one provider (gpt-4o-mini → gpt-4o, claude-haiku → claude-opus). No multi-host needed.
-2. **Run two proxy instances** pointed at different `CASCADIA_OPENAI_BASE_URL`s; split traffic between them at your ingress layer by cluster. Each proxy makes its own cascade decision against its own base URL.
-3. **Stack on LiteLLM.** Point `CASCADIA_OPENAI_BASE_URL` at a LiteLLM proxy; LiteLLM handles the N-provider dispatch underneath. See ["What if I need a provider neither Path A nor Path B covers?"](#what-if-i-need-a-provider-neither-path-a-nor-path-b-covers) below.
-4. **Build a custom-wire-format provider** (Path B) — variants carry their own base URL, no sharing.
-
-So:
+List the provider in `CASCADIA_PROVIDERS`, then configure it with three env vars (the name, uppercased with `-` → `_`, is the token):
 
 ```bash
-# Provider keys + URLs come from env.
-export CASCADIA_OPENAI_API_KEY=<mistral-key>
-export CASCADIA_OPENAI_BASE_URL=https://api.mistral.ai/v1
+export CASCADIA_PROVIDERS=hf                       # comma-separated for several
+export CASCADIA_PROVIDER_HF_BASE_URL=https://router.huggingface.co   # required
+export CASCADIA_PROVIDER_HF_API_KEY=hf_...         # omit to leave it unconfigured
+export CASCADIA_PROVIDER_HF_WIRE=openai            # openai (default) | anthropic
 
 cascadia-proxy
 ```
 
-And in your policy file, use the `openai/` prefix:
+Then use the name as the `provider/` prefix in your policy. The model half may contain slashes (HuggingFace ids work verbatim):
 
 ```json
 {
@@ -55,8 +47,8 @@ And in your policy file, use the `openai/` prefix:
   "cluster_buckets": 4,
   "clusters": {
     "default": {
-      "cheap_model":     "openai/mistral-small-latest",
-      "expensive_model": "openai/mistral-large-latest",
+      "cheap_model":     "hf/meta-llama/Llama-3.3-70B-Instruct",
+      "expensive_model": "openai/gpt-4o",
       "threshold": 0.7,
       "shadow_rate": 0.1
     }
@@ -64,55 +56,81 @@ And in your policy file, use the `openai/` prefix:
 }
 ```
 
-That's it. The `openai/` prefix is selecting the *adapter*, not the upstream host — the host is wherever `CASCADIA_OPENAI_BASE_URL` points.
+**Mixed-provider cascades now work in one proxy.** Because `hf` and `openai` are distinct registry entries with distinct base URLs + keys, the cheap tier dials the HuggingFace router and the expensive tier dials OpenAI — from the same process. (`events.provider` attributes each tier correctly, and `/clusters` shows `hf → openai`.)
 
-### Per-host safety check
+- **`WIRE=openai`** (default) covers any host exposing `POST /v1/chat/completions` in OpenAI's shape: the HuggingFace router, Together, Fireworks, OpenRouter, Perplexity, vLLM/Ray-Serve, Mistral, DeepSeek, …
+- **`WIRE=anthropic`** routes through the Anthropic Messages adapter (request/response + streaming translation) — for a private Claude-shape host or proxy.
 
-The OpenAI adapter refuses to dial known *non*-OpenAI-shape hosts (`api.anthropic.com`, `generativelanguage.googleapis.com`, `bedrock-runtime`) — it returns a 400 with a clear "you've pointed me at the wrong place" message before the network call. See the `KNOWN_NON_OPENAI_HOSTS` list in [`crates/proxy/src/upstream/openai_compat.rs`](../crates/proxy/src/upstream/openai_compat.rs). Your private host won't be on that list, so the request proceeds.
+### Quick alternative: repoint a built-in
+
+If you just want one of the four built-ins to dial a different host (e.g. a self-hosted OpenAI-compatible endpoint), override its base URL instead of adding a registry entry:
+
+```bash
+export CASCADIA_OPENAI_API_KEY=<key>
+export CASCADIA_OPENAI_BASE_URL=https://api.mistral.ai/v1
+# policy: "cheap_model": "openai/mistral-small-latest"
+```
+
+This is simpler when you only need one extra host, but it consumes the `openai/` prefix — for *additional* providers alongside OpenAI, use a registry entry.
+
+### Per-host safety check (OpenAI wire)
+
+The OpenAI adapter refuses to dial known *non*-OpenAI-shape hosts (`api.anthropic.com`, `generativelanguage.googleapis.com`, `bedrock-runtime`) — it returns a 400 with a clear message before the network call, rather than a cryptic auth error. See `KNOWN_NON_OPENAI_HOSTS` in [`crates/proxy/src/upstream/openai_compat.rs`](../crates/proxy/src/upstream/openai_compat.rs). Your private host won't be on that list, so the request proceeds. If a provider speaks Anthropic's shape, give it `WIRE=anthropic` rather than pointing the OpenAI adapter at it.
+
+### Inspecting the registry
+
+`GET /providers` (public, no auth — configuration, not credentials) returns every configured provider with its name, wire, base URL, and a `configured` boolean (whether a key is set — never the key itself):
+
+```json
+{ "providers": [
+  { "name": "anthropic", "wire": "anthropic", "base_url": "https://api.anthropic.com", "configured": true },
+  { "name": "hf",        "wire": "openai",    "base_url": "https://router.huggingface.co", "configured": true },
+  { "name": "openai",    "wire": "openai",    "base_url": "https://api.openai.com", "configured": true }
+] }
+```
 
 ### Helm chart equivalent
 
 ```yaml
 config:
-  openaiBaseUrl: https://api.mistral.ai/v1
+  providers: "hf"
+  providerHfBaseUrl: https://router.huggingface.co
 secrets:
-  openaiApiKey: <mistral-key>
+  providerHfApiKey: hf_...
 ```
 
-## Path B — Provider has its own wire format
+## Path B — a genuinely new wire format
 
-If the provider's request shape diverges from OpenAI's (Anthropic's `system: string` + content blocks, Gemini's `contents: [{role, parts}]`, Bedrock's per-model shape), you need a real adapter. **Open a GitHub issue first**, link PLAN.md §9 (`2026-05-19 — Phase 7 scoping`) for the hard-fail-on-unknown-providers context, and propose the variant. The maintainer will confirm the variant is worth the maintenance cost before you write code.
+Only needed when the provider speaks neither OpenAI's `/v1/chat/completions` nor Anthropic's `/v1/messages` — e.g. Gemini's `contents: [{role, parts}]` or Bedrock's per-model native shape. This is the rare case. **Open a GitHub issue first**, link PLAN.md §9 (`2026-05-19` for the hard-fail context, `2026-06-09` for the registry), and propose the new wire. The maintainer confirms it's worth the maintenance cost before you write code.
 
-When approved, a new variant touches:
+When approved, a new wire format touches:
 
 | File | Change |
 |---|---|
-| `crates/proxy/src/config.rs` | Add `Provider::<Name>` variant + `label()` arm + `FromStr` arm + `provider_credentials()` arm + env-var (`CASCADIA_<NAME>_API_KEY`, `CASCADIA_<NAME>_BASE_URL`). |
-| `crates/proxy/src/model_id.rs` | Update the unknown-provider error message's "expected one of" list. |
-| `crates/proxy/src/upstream.rs` | Add a dispatch arm in `forward_chat()` and `forward_chat_stream()`. |
-| `crates/proxy/src/upstream/<name>.rs` | New adapter. Translate OpenAI ChatCompletion request → provider request → OpenAI ChatCompletion response. Mirror the structure of `anthropic.rs`. |
-| `crates/proxy/src/upstream/openai_compat.rs` | Add the provider's bare host (`api.<name>.<tld>`) to `KNOWN_NON_OPENAI_HOSTS` so the OpenAI adapter refuses to be misconfigured at it. |
-| `crates/proxy/src/metrics.rs` | Add the new label to the pre-touch table. |
-| `deploy/helm/cascadia/templates/secret.yaml` + `values.yaml` | New `secrets.<name>ApiKey` field + Secret entry. |
-| `deploy/helm/cascadia/templates/configmap.yaml` + `values.yaml` | New `config.<name>BaseUrl` field + ConfigMap entry. |
-| Tests | Unit tests for the new adapter's request and response translation, plus an integration test against a mock that emits the new wire shape. Anthropic's tests in `crates/proxy/src/upstream/anthropic.rs` are the reference. |
+| `crates/proxy/src/config.rs` | Add a `Wire::<Name>` variant + `label()` arm + `Wire::parse()` arm. |
+| `crates/proxy/src/upstream.rs` | Add a dispatch arm in `forward_chat()` and `forward_chat_stream()` keyed on the new `Wire`. |
+| `crates/proxy/src/upstream/<name>.rs` | New adapter: translate OpenAI ChatCompletion request → provider request → OpenAI ChatCompletion response (+ streaming). Mirror `anthropic.rs`. |
+| `crates/proxy/src/upstream/openai_compat.rs` | If relevant, add the provider's bare host to `KNOWN_NON_OPENAI_HOSTS`. |
+| Tests | Unit tests for the adapter's request/response translation + an integration test against a mock emitting the new wire shape. `anthropic.rs`'s tests are the reference. |
+
+Note this is a much smaller surface than before the registry: there's no enum variant, `FromStr` arm, `provider_credentials` arm, per-provider env wiring, or metrics-table edit — the registry handles naming, credentials, and routing; you only add the *wire translation*. Once the `Wire` exists, anyone can use it for any number of registry providers via `CASCADIA_PROVIDER_<NAME>_WIRE=<name>`.
 
 ### Streaming
 
-The new adapter MUST also implement `forward_stream()` returning OpenAI `chat.completion.chunk` SSE frames. See `crates/proxy/src/upstream/anthropic.rs::AnthropicStreamTranslator` for a worked example of translating typed events into OpenAI delta chunks. The proxy doesn't ship streaming on a per-provider basis — it's all-or-nothing per adapter.
+A new wire adapter MUST also implement `forward_stream()` returning OpenAI `chat.completion.chunk` SSE frames. See `crates/proxy/src/upstream/anthropic.rs::AnthropicStreamTranslator` for translating typed events into OpenAI delta chunks.
 
 ## Naming and labels
 
-- `Provider::label()` returns the lowercase kebab-style name (`openai`, `anthropic`). Use it everywhere a string is needed — `events.provider` column, Prometheus labels, log fields. Stable identifier.
-- The `provider/model` prefix is case-insensitive at parse time but stored as the canonical label. Don't introduce a new prefix that differs in case from the label.
+- A provider's registry name (its `provider/` prefix) is lowercased and trimmed at parse time; the historical `x-ai` alias folds onto `xai`. Use it everywhere a string is needed — `events.provider`, Prometheus labels, log fields. Valid names are letters, digits, `-`, `_`.
+- `Wire::label()` returns `openai` / `anthropic` for diagnostics. The wire is *how* a provider is dialed; the name is *who* it is.
 
 ## When in doubt
 
-Open an issue. The 30-minute "should this be a base URL override or a new variant?" conversation up front saves the maintainer rejecting 400 lines of code two weeks later.
+Open an issue. The 30-minute "is this a registry entry or a new wire?" conversation up front saves the maintainer rejecting 400 lines of code two weeks later. Almost always, it's a registry entry.
 
 ## "What if I need a provider neither Path A nor Path B covers?"
 
-If the provider has a custom wire format AND nobody's willing to maintain a new variant (Path B), the answer is **stack Cascadia on top of LiteLLM**. LiteLLM is the provider-plumbing layer (100+ APIs behind one OpenAI shape); Cascadia sits above it making cascade decisions. Architecture:
+If the provider has a custom wire format AND nobody's willing to maintain a new `Wire` (Path B), **stack Cascadia on top of LiteLLM**. LiteLLM is the provider-plumbing layer (100+ APIs behind one OpenAI shape); Cascadia sits above it making cascade decisions:
 
 ```
 client → Cascadia (cascade routing, policy learning, judge)
@@ -122,4 +140,4 @@ client → Cascadia (cascade routing, policy learning, judge)
          OpenAI / Anthropic / Bedrock / Vertex / Cohere / Gemini / …
 ```
 
-Point `CASCADIA_OPENAI_BASE_URL` at LiteLLM's proxy URL, use `openai/<litellm-routable-model>` in your policy. You inherit LiteLLM's full provider list with Cascadia's closed-loop quality measurement on top. See the [README → "What makes Cascadia different"](../README.md#what-makes-cascadia-different) for the composition story.
+Add a registry entry (or override `CASCADIA_OPENAI_BASE_URL`) pointing at LiteLLM's proxy, use `<name>/<litellm-routable-model>` in your policy. You inherit LiteLLM's full provider list with Cascadia's closed-loop quality measurement on top. See the [README → "What makes Cascadia different"](../README.md#what-makes-cascadia-different) for the composition story.
