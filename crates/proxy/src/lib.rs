@@ -264,6 +264,11 @@ fn router(state: AppState) -> Router {
         // glance what the deploy persists. No secrets — explicitly NO
         // API keys, DB URLs, or bearer tokens.
         .route("/config", get(handlers::config::get_config))
+        // Read-only registry of configured upstream providers (names, wire,
+        // base URL, and whether a key is set — never the key). Not auth-gated
+        // — it's configuration, not credentials, like /policy and /config. The
+        // dashboard model-picker reads it.
+        .route("/providers", get(handlers::providers::get_providers))
         .merge(v1)
         .fallback(handlers::not_found::not_found)
         .with_state(state)

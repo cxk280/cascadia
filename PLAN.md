@@ -241,6 +241,16 @@ Originally scoped as a separate phase (PLAN.md §9 "open issues" 2026-05-19). Fo
 
 Newest first. Decisions are append-only; supersedes are noted by linking forward.
 
+### 2026-06-09 — Dynamic provider registry (reverses the [2026-05-19](#2026-05-19--phase-7-scoped-cross-provider-cascades-hard-fail-on-unprefixed-model-strings) closed `Provider` enum)
+
+The [2026-05-19 Phase-7 entry](#2026-05-19--phase-7-scoped-cross-provider-cascades-hard-fail-on-unprefixed-model-strings) fixed a **closed** `Provider` enum (`OpenAI/Anthropic/Groq/XAI`) and explicitly *dropped* the `CASCADIA_PROVIDERS` allowlist; the [2026-05-20 landing entry](#2026-05-20--phase-7--71-foundation-landed-cross-provider--tool-use) confirmed the four-provider set and shelved Gemini/Together/vLLM env vars. **This decision reverses the closed-enum half** (user-authorized 2026-06-09) to support choosing models from HuggingFace and the wider OpenAI-compatible ecosystem without a code change per provider.
+
+**What changed.** `Provider` (closed enum) → a config-driven registry on `Config.providers: HashMap<String, ProviderConfig>`, where `ProviderConfig { name, wire, base_url, api_key }` and `Wire ∈ {OpenAi, Anthropic}`. The four natives are seeded as built-ins (their historical `CASCADIA_<NAME>_API_KEY` / `_BASE_URL` env vars are **unchanged** — fully backward compatible). New providers are added via `CASCADIA_PROVIDERS=hf,together,…` + `CASCADIA_PROVIDER_<NAME>_{BASE_URL,API_KEY,WIRE}` (WIRE defaults to `openai`). Upstream dispatch keys on `wire`, not the enum. `parse_model_id` is now purely *syntactic* (`provider: String`); provider names with slashes in the model half (HuggingFace ids like `hf/meta-llama/Llama-3.3-70B-Instruct`) work as before.
+
+**Why this isn't a regression of the §9 hard-fail.** The load-bearing 2026-05-19 invariant — *unknown/unprefixed model strings fail loud at deploy, not silently weeks later* — is **preserved**. `parse_model_id` still rejects unprefixed/empty strings at load; the registry-membership check (`PolicyTable::validate_providers`) runs at **boot and on every hot-reload** (file + postgres) and refuses an unconfigured prefix (reload keeps the previous good policy). Only the provider *set* became dynamic; "loud, not silent" still holds. This also realizes the `HashMap<String, …>` registry the original 2026-05-19 entry itself sketched — we're enabling the registration it deferred, not fighting the design.
+
+**Out of scope (this entry):** the dashboard model-picker + authenticated policy-write path (separate follow-up PR into the `v2` integration branch); Gemini's non-OpenAI wire format (still routes via `wire=anthropic` or stays a future adapter). Shipped on branch `feat/provider-registry` → PR into `v2` (not `main`; see the v2 integration-branch workflow).
+
 ### 2026-06-06 (later 2) — Removed the standalone `SOLID.md`
 
 The [2026-05-19 entry](#2026-05-19--judge-worker-scaffolded-early-using-solid-agent-swarms-pattern) created a root-level `SOLID.md` to document the SOLID Agent Swarms pattern for contributors. It's removed: the doc was a redundant standalone artifact, and the pattern is already self-evident in the code (the `LLMClient`/`BaseJudge`/executor abstractions + thin composition roots) and described in the service READMEs.
