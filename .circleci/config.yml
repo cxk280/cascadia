@@ -5,6 +5,9 @@ version: 2.1
 #   Every push / PR : build + test (rust, the three python services, dashboard).
 #   On `main` only  : deploy to Railway dev (automatic) → staging (manual
 #                     approval gate) → prod (manual approval gate).
+#   On `v2` only    : deploy to the isolated Railway `v2` preview environment
+#                     (automatic, after tests) — the integration branch for
+#                     in-progress feature work, never the live dev/staging/prod.
 #
 # Railway auth comes from CircleCI project env vars:
 #   RAILWAY_API_TOKEN   — a Railway account/team token with access to the project
@@ -355,3 +358,23 @@ workflows:
           filters:
             branches:
               only: main
+
+      # --- v2 preview: automatic on merge to the `v2` integration branch, after
+      #     tests pass. Deploys to the isolated `v2` Railway environment (forked
+      #     from dev, scale-to-zero) in the same project — no new CircleCI secrets
+      #     needed (same RAILWAY_PROJECT_ID/token). Mirrors deploy-dev but gated on
+      #     the v2 branch, so in-progress feature work is previewable without ever
+      #     touching the live dev/staging/prod envs (those stay on `main`). When v2
+      #     is complete it merges to main + cuts a v* tag for the major release. ---
+      - deploy:
+          name: deploy-v2
+          env: v2
+          requires:
+            - rust
+            - test-judge-worker
+            - test-policy-controller
+            - test-dashboard-api
+            - dashboard
+          filters:
+            branches:
+              only: v2
