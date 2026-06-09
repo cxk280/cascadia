@@ -56,6 +56,15 @@ pub async fn run() -> anyhow::Result<()> {
     };
 
     let policy = PolicyTable::from_env().context("loading policy table")?;
+    // Hard-fail at boot if the env/inline policy names a provider that isn't in
+    // the configured registry (the registry-membership half of the §9 loud-fail;
+    // `parse_model_id` already enforced the `provider/model` syntax). The
+    // file/postgres initial load is validated inside the watcher against the
+    // same set.
+    let known_providers = std::sync::Arc::new(config.provider_name_set());
+    policy
+        .validate_providers(&known_providers)
+        .context("validating policy providers")?;
     let policy_swap = std::sync::Arc::new(arc_swap::ArcSwap::from_pointee(policy));
     // Policy source: `postgres` polls the shared `policy_store` table (the
     // controller writes it) — for deploys without a cross-service volume.
@@ -67,15 +76,18 @@ pub async fn run() -> anyhow::Result<()> {
         .to_lowercase();
     if policy_source == "postgres" {
         match &db_pool {
-            Some(pool) => watcher::spawn_pg(pool.clone(), policy_swap.clone())
-                .await
-                .context("initializing postgres policy source")?,
+            Some(pool) => {
+                watcher::spawn_pg(pool.clone(), policy_swap.clone(), known_providers.clone())
+                    .await
+                    .context("initializing postgres policy source")?
+            }
             None => anyhow::bail!(
                 "CASCADIA_POLICY_SOURCE=postgres requires CASCADIA_DATABASE_URL to be set"
             ),
         }
     } else if let Some(path) = config.policy_file.clone() {
-        watcher::spawn(path, policy_swap.clone()).context("spawning policy watcher")?;
+        watcher::spawn(path, policy_swap.clone(), known_providers.clone())
+            .context("spawning policy watcher")?;
     }
     let shutdown_timeout = env::var("CASCADIA_SHUTDOWN_TIMEOUT_SECS")
         .ok()
@@ -124,6 +136,10 @@ fn log_recognized_env_vars() {
         "CASCADIA_GROQ_BASE_URL",
         "CASCADIA_XAI_API_KEY",
         "CASCADIA_XAI_BASE_URL",
+        // Dynamic provider registry: the list plus per-provider
+        // CASCADIA_PROVIDER_<NAME>_{BASE_URL,API_KEY,WIRE} (matched by prefix
+        // below, since <NAME> is open-ended).
+        "CASCADIA_PROVIDERS",
         "CASCADIA_LOG_LEVEL",
         "CASCADIA_LOG_JSON",
         "CASCADIA_DATABASE_URL",
@@ -150,7 +166,9 @@ fn log_recognized_env_vars() {
         if !key.starts_with("CASCADIA_") {
             continue;
         }
-        if RECOGNIZED.contains(&key.as_str()) {
+        // Per-provider registry vars (CASCADIA_PROVIDER_<NAME>_BASE_URL / _API_KEY
+        // / _WIRE) are open-ended by <NAME>, so match them by prefix.
+        if RECOGNIZED.contains(&key.as_str()) || key.starts_with("CASCADIA_PROVIDER_") {
             honored.push(key);
         } else {
             unknown.push(key);

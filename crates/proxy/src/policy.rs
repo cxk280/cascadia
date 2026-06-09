@@ -21,7 +21,7 @@
 //!
 //! Unknown clusters fall back to `default_cluster`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::Path;
 
@@ -185,6 +185,39 @@ impl PolicyTable {
         Ok(table)
     }
 
+    /// Hard-fail (PLAN.md §9) if any cluster references a provider prefix that
+    /// isn't in the configured registry. `from_json_str` / `from_env_fallback`
+    /// already enforce the `provider/model` *syntax* via `parse_model_id`; this
+    /// adds the registry-*membership* check, which needs the live provider set.
+    ///
+    /// It runs at boot (lib.rs) and on every hot-reload (file + postgres
+    /// watcher), so the "unknown provider fails loud, not silent" invariant
+    /// holds across reloads too — a refit or hand-edit that introduces an
+    /// unconfigured prefix is rejected and the previous good policy is kept.
+    pub fn validate_providers(&self, known: &HashSet<String>) -> anyhow::Result<()> {
+        let mut sorted: Vec<&str> = known.iter().map(String::as_str).collect();
+        sorted.sort_unstable();
+        let known_list = sorted.join(", ");
+        for (key, policy) in &self.clusters {
+            for (field, model) in [
+                ("cheap_model", &policy.cheap_model),
+                ("expensive_model", &policy.expensive_model),
+            ] {
+                let id = parse_model_id(model)
+                    .map_err(|e| anyhow::anyhow!("cluster '{key}' {field}: {e}"))?;
+                let resolved = crate::config::normalize_provider_key(&id.provider);
+                anyhow::ensure!(
+                    known.contains(&resolved),
+                    "cluster '{key}' {field} `{model}`: unknown provider `{}`. \
+                     Configured providers: [{known_list}]. Add it via CASCADIA_PROVIDERS \
+                     (CASCADIA_PROVIDER_<NAME>_BASE_URL/_API_KEY) or fix the prefix.",
+                    id.provider
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Look up the policy for `cluster_id`. Falls back to `default_cluster`'s
     /// policy if the id is unknown.
     pub fn lookup(&self, cluster_id: &str) -> &ClusterPolicy {
@@ -327,15 +360,74 @@ mod tests {
     }
 
     #[test]
-    fn from_json_str_rejects_unknown_provider() {
+    fn from_json_str_accepts_syntactic_unknown_provider() {
+        // The registry-membership check moved to `validate_providers` (it needs
+        // the live provider set); `from_json_str` only enforces `provider/model`
+        // syntax now, so a syntactically-valid unknown prefix parses fine here.
         let json = r#"{
             "default_cluster": "default",
             "clusters": {
                 "default": {"cheap_model": "cohere/command-r", "expensive_model": "openai/gpt-4o", "threshold": 0.7, "shadow_rate": 0.1}
             }
         }"#;
-        let err = PolicyTable::from_json_str(json).unwrap_err().to_string();
+        assert!(PolicyTable::from_json_str(json).is_ok());
+    }
+
+    fn known_set(names: &[&str]) -> HashSet<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn validate_providers_accepts_known_and_rejects_unknown() {
+        let json = r#"{
+            "default_cluster": "default",
+            "clusters": {
+                "default": {"cheap_model": "groq/llama-3.3-70b", "expensive_model": "anthropic/claude-sonnet", "threshold": 0.7, "shadow_rate": 0.1}
+            }
+        }"#;
+        let table = PolicyTable::from_json_str(json).unwrap();
+        let known = known_set(&["openai", "anthropic", "groq", "xai"]);
+        assert!(table.validate_providers(&known).is_ok());
+
+        // A prefix not in the registry is rejected, naming the offender.
+        let json2 = r#"{
+            "default_cluster": "default",
+            "clusters": {
+                "default": {"cheap_model": "cohere/command-r", "expensive_model": "openai/gpt-4o", "threshold": 0.7, "shadow_rate": 0.1}
+            }
+        }"#;
+        let table2 = PolicyTable::from_json_str(json2).unwrap();
+        let err = table2.validate_providers(&known).unwrap_err().to_string();
         assert!(err.contains("unknown provider"), "got: {err}");
+        assert!(err.contains("cohere"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_providers_accepts_configured_custom_provider() {
+        // A HuggingFace-style entry added via CASCADIA_PROVIDERS, with a
+        // slash-bearing model name, validates against the registry.
+        let json = r#"{
+            "default_cluster": "default",
+            "clusters": {
+                "default": {"cheap_model": "hf/meta-llama/Llama-3.3-70B-Instruct", "expensive_model": "anthropic/claude-sonnet", "threshold": 0.7, "shadow_rate": 0.1}
+            }
+        }"#;
+        let table = PolicyTable::from_json_str(json).unwrap();
+        let known = known_set(&["openai", "anthropic", "groq", "xai", "hf"]);
+        assert!(table.validate_providers(&known).is_ok());
+    }
+
+    #[test]
+    fn validate_providers_folds_xai_alias() {
+        let json = r#"{
+            "default_cluster": "default",
+            "clusters": {
+                "default": {"cheap_model": "x-ai/grok-2-latest", "expensive_model": "openai/gpt-4o", "threshold": 0.7, "shadow_rate": 0.1}
+            }
+        }"#;
+        let table = PolicyTable::from_json_str(json).unwrap();
+        let known = known_set(&["openai", "xai"]);
+        assert!(table.validate_providers(&known).is_ok());
     }
 
     #[test]

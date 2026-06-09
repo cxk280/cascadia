@@ -15,6 +15,7 @@
 //! tuning; this module is the receiver that makes the proxy honor the new
 //! policy without a restart.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -32,15 +33,22 @@ const PG_POLL_INTERVAL_DEFAULT_SECS: u64 = 5;
 /// Spawn the hot-reload watcher. Loads the file once synchronously (so a
 /// malformed startup policy fails the boot), then polls for mtime changes
 /// from a background task.
-pub fn spawn(path: PathBuf, current: Arc<ArcSwap<PolicyTable>>) -> anyhow::Result<()> {
+pub fn spawn(
+    path: PathBuf,
+    current: Arc<ArcSwap<PolicyTable>>,
+    known_providers: Arc<HashSet<String>>,
+) -> anyhow::Result<()> {
     let initial = PolicyTable::from_json_file(&path)?;
+    initial
+        .validate_providers(&known_providers)
+        .with_context(|| format!("policy file {}", path.display()))?;
     current.store(Arc::new(initial));
 
     let last_mtime = std::fs::metadata(&path)
         .ok()
         .and_then(|m| m.modified().ok());
 
-    tokio::spawn(poll_loop(path, current, last_mtime));
+    tokio::spawn(poll_loop(path, current, last_mtime, known_providers));
     Ok(())
 }
 
@@ -48,6 +56,7 @@ async fn poll_loop(
     path: PathBuf,
     current: Arc<ArcSwap<PolicyTable>>,
     mut last_mtime: Option<std::time::SystemTime>,
+    known_providers: Arc<HashSet<String>>,
 ) {
     let mut ticker = interval(POLL_INTERVAL);
     // Don't burst-reload if the proxy was paused (laptop sleep, CI freeze).
@@ -70,11 +79,19 @@ async fn poll_loop(
         last_mtime = next_mtime;
 
         match PolicyTable::from_json_file(&path) {
-            Ok(new) => {
-                let version = new.version.clone();
-                current.store(Arc::new(new));
-                tracing::info!(?version, "policy hot-reloaded");
-            }
+            Ok(new) => match new.validate_providers(&known_providers) {
+                Ok(()) => {
+                    let version = new.version.clone();
+                    current.store(Arc::new(new));
+                    tracing::info!(?version, "policy hot-reloaded");
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        ?err,
+                        "policy hot-reload rejected (unknown provider); keeping previous policy"
+                    );
+                }
+            },
             Err(err) => {
                 tracing::warn!(?err, "policy hot-reload failed; keeping previous policy");
             }
@@ -98,10 +115,17 @@ async fn poll_loop(
 /// runs in a background task. A DB outage just means we keep serving the last
 /// good policy (mirrors the file watcher's keep-previous-on-error behavior),
 /// honoring the "hot path must not block on Postgres" invariant.
-pub async fn spawn_pg(pool: PgPool, current: Arc<ArcSwap<PolicyTable>>) -> anyhow::Result<()> {
+pub async fn spawn_pg(
+    pool: PgPool,
+    current: Arc<ArcSwap<PolicyTable>>,
+    known_providers: Arc<HashSet<String>>,
+) -> anyhow::Result<()> {
     let last_id = match fetch_latest(&pool).await? {
         Some((id, body)) => {
             let table = PolicyTable::from_json_str(&body)
+                .map_err(|e| anyhow::anyhow!("policy_store row {id}: {e}"))?;
+            table
+                .validate_providers(&known_providers)
                 .map_err(|e| anyhow::anyhow!("policy_store row {id}: {e}"))?;
             let version = table.version.clone();
             current.store(Arc::new(table));
@@ -129,6 +153,7 @@ pub async fn spawn_pg(pool: PgPool, current: Arc<ArcSwap<PolicyTable>>) -> anyho
         current,
         last_id,
         Duration::from_secs(interval_secs),
+        known_providers,
     ));
     Ok(())
 }
@@ -160,13 +185,16 @@ async fn pg_poll_loop(
     current: Arc<ArcSwap<PolicyTable>>,
     mut last_id: i64,
     poll: Duration,
+    known_providers: Arc<HashSet<String>>,
 ) {
     let mut ticker = interval(poll);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         ticker.tick().await;
         match fetch_latest(&pool).await {
-            Ok(Some((id, body))) if id != last_id => match PolicyTable::from_json_str(&body) {
+            Ok(Some((id, body))) if id != last_id => match PolicyTable::from_json_str(&body)
+                .and_then(|new| new.validate_providers(&known_providers).map(|()| new))
+            {
                 Ok(new) => {
                     let version = new.version.clone();
                     current.store(Arc::new(new));
@@ -180,7 +208,7 @@ async fn pg_poll_loop(
                     tracing::warn!(
                         ?err,
                         row_id = id,
-                        "postgres policy parse failed; keeping previous policy"
+                        "postgres policy rejected (parse or unknown provider); keeping previous policy"
                     );
                 }
             },

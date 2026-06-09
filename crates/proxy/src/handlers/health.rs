@@ -93,10 +93,7 @@ pub async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
 
     // 1. At least one provider must be credentialed.
     let config = state.config();
-    let any_provider = config.openai_api_key.is_some()
-        || config.anthropic_api_key.is_some()
-        || config.groq_api_key.is_some()
-        || config.xai_api_key.is_some();
+    let any_provider = config.any_provider_configured();
     if any_provider {
         passed.push("upstream_provider_configured");
     } else {
