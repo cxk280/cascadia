@@ -1,6 +1,7 @@
 import { ProxyLivePipServer } from "@/components/ProxyLivePipServer";
 import { Shell } from "@/components/Shell";
 import { api, type ConfigSnapshot } from "@/lib/api";
+import { pct } from "@/lib/format";
 
 // Health page is the on-call signal — stale data is worse than slow data.
 // dynamic = 'force-dynamic' disables the route cache so every page load
@@ -84,11 +85,7 @@ export default async function HealthPage() {
                 />
                 <Row
                   label="Success rate"
-                  value={
-                    overview.success_rate == null
-                      ? "—"
-                      : `${(overview.success_rate * 100).toFixed(1)}%`
-                  }
+                  value={pct(overview.success_rate)}
                   ok={
                     overview.success_rate == null
                       ? null
