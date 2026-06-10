@@ -12,6 +12,14 @@ export function pct(value: number | null | undefined, digits = 1): string {
   return `${(value * 100).toFixed(digits)}%`;
 }
 
+/** A fraction (0–1) as a whole-number percentage via `Math.round`:
+ *  `0.126 → "13%"`. The Pareto chart + slider use this rounding convention
+ *  (distinct from `pct`'s `toFixed`); kept separate to preserve their exact
+ *  output. Input is always a real number there (no null guard needed). */
+export function roundPct(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
 /** A number to fixed decimals: `0.7 → "0.70"`. `null`/`undefined` → em dash. */
 export function num(value: number | null | undefined, digits = 2): string {
   if (value == null) return "—";

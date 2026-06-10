@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import { ParetoChart } from "@/components/ParetoChart";
 import type { ParetoPoint } from "@/lib/api";
+import { roundPct } from "@/lib/format";
 import {
   bestTierQuality,
   leaveOneOutBacktest,
@@ -11,8 +12,6 @@ import {
   projectCostForQuality,
   worstTierQuality,
 } from "@/lib/pareto-fit";
-
-const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 // The navigable Pareto frontier (claim 2.3): drag a target quality, read the
 // projected cost off the fitted curve — and see, right below, whether that fit
@@ -64,7 +63,7 @@ export function ParetoSlider({ points }: { points: ParetoPoint[] }) {
           </label>
           <div className="text-sm text-fg-muted">
             target quality{" "}
-            <span className="font-mono text-fg">{pct(targetQuality)}</span>
+            <span className="font-mono text-fg">{roundPct(targetQuality)}</span>
           </div>
         </div>
         <input
@@ -95,7 +94,7 @@ export function ParetoSlider({ points }: { points: ParetoPoint[] }) {
           <div className="rounded-md border border-border bg-bg px-4 py-3">
             <div className="text-xs text-fg-muted">Projected cost</div>
             <div className="text-2xl font-semibold font-mono text-accent mt-1">
-              {projectedCost !== null ? pct(projectedCost) : "—"}
+              {projectedCost !== null ? roundPct(projectedCost) : "—"}
             </div>
             <div className="text-xs text-fg-muted mt-1">
               escalation rate (fraction routed to the expensive tier)
@@ -105,7 +104,7 @@ export function ParetoSlider({ points }: { points: ParetoPoint[] }) {
             <div className="text-xs text-fg-muted">Cost vs best-tier-everywhere</div>
             <div className="text-2xl font-semibold font-mono text-fg mt-1">
               {projectedCost !== null
-                ? `−${Math.round((1 - projectedCost) * 100)}%`
+                ? `−${roundPct(1 - projectedCost)}`
                 : "—"}
             </div>
             <div className="text-xs text-fg-muted mt-1">
@@ -158,7 +157,7 @@ function BacktestPanel({
         >
           {backtest.validated
             ? "✓ validated within ±95% CI"
-            : `${Math.round(backtest.coverage * 100)}% within ±95% CI`}
+            : `${roundPct(backtest.coverage)} within ±95% CI`}
         </span>
       </div>
       <p className="text-xs text-fg-muted mt-1">
@@ -182,14 +181,14 @@ function BacktestPanel({
             {backtest.rows.map((r) => (
               <tr key={r.cluster_id} className="border-b border-border/50">
                 <td className="py-2 pr-4 text-fg">{r.cluster_id}</td>
-                <td className="py-2 pr-4 text-fg-muted">{pct(r.quality)}</td>
+                <td className="py-2 pr-4 text-fg-muted">{roundPct(r.quality)}</td>
                 <td className="py-2 pr-4 text-fg">
-                  {r.predicted_cost !== null ? pct(r.predicted_cost) : "—"}
+                  {r.predicted_cost !== null ? roundPct(r.predicted_cost) : "—"}
                 </td>
                 <td className="py-2 pr-4 text-fg-muted">
-                  {pct(r.measured_cost)}{" "}
+                  {roundPct(r.measured_cost)}{" "}
                   <span className="text-fg-muted/70">
-                    [{pct(r.ci.lo)}–{pct(r.ci.hi)}]
+                    [{roundPct(r.ci.lo)}–{roundPct(r.ci.hi)}]
                   </span>
                 </td>
                 <td className="py-2">

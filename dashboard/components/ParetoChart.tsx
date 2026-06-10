@@ -14,6 +14,7 @@ import {
 } from "recharts";
 
 import type { ParetoPoint } from "@/lib/api";
+import { roundPct } from "@/lib/format";
 
 export interface CurvePoint {
   cost: number;
@@ -73,7 +74,7 @@ export function ParetoChart({
             type="number"
             dataKey="cost"
             domain={[0, 1]}
-            tickFormatter={(v) => `${Math.round(v * 100)}%`}
+            tickFormatter={(v) => roundPct(v)}
             stroke="#9098A8"
           >
             <Label
@@ -87,7 +88,7 @@ export function ParetoChart({
             type="number"
             dataKey="quality"
             domain={[0, 1]}
-            tickFormatter={(v) => `${Math.round(v * 100)}%`}
+            tickFormatter={(v) => roundPct(v)}
             stroke="#9098A8"
           >
             <Label
@@ -131,8 +132,8 @@ export function ParetoChart({
                   <div style={{ color: "#5AE3D6", marginBottom: 2 }}>
                     {p.cluster}
                   </div>
-                  <div>quality: {Math.round(p.quality * 100)}%</div>
-                  <div>escalation: {Math.round(p.cost * 100)}%</div>
+                  <div>quality: {roundPct(p.quality)}</div>
+                  <div>escalation: {roundPct(p.cost)}</div>
                   <div style={{ color: "#9098A8" }}>n = {p.n}</div>
                 </div>
               );
@@ -201,8 +202,8 @@ export function ParetoChart({
           {data.map((d) => (
             <tr key={d.cluster}>
               <td>{d.cluster}</td>
-              <td>{Math.round(d.cost * 100)}%</td>
-              <td>{Math.round(d.quality * 100)}%</td>
+              <td>{roundPct(d.cost)}</td>
+              <td>{roundPct(d.quality)}</td>
               <td>{d.n}</td>
             </tr>
           ))}
