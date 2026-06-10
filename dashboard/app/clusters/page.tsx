@@ -1,21 +1,15 @@
+// Clusters page — per-cluster traffic + escalation + scored quality + live
+// policy (threshold / shadow_rate). Joins api.clusters() with api.policy();
+// rendered inside Shell.
 import { InfoTip } from "@/components/InfoTip";
 import { ProxyLivePipServer } from "@/components/ProxyLivePipServer";
 import { Shell } from "@/components/Shell";
 import { api, type ClusterPolicy, type PolicyTable } from "@/lib/api";
+import { num, pct } from "@/lib/format";
 
 export const revalidate = 10;
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Clusters" };
-
-function pct(value: number | null): string {
-  if (value == null) return "—";
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function num(value: number | null | undefined, digits = 2): string {
-  if (value == null) return "—";
-  return value.toFixed(digits);
-}
 
 /// Threshold above which the escalation rate gets a caveat. If most of a
 /// cluster's traffic carries `tools=[...]`, escalation will be near-zero by

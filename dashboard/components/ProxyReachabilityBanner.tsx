@@ -2,29 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 
-interface ReadyzPayload {
-  status?: string;
-  passed_checks?: string[];
-  failed_checks?: string[];
-  shutdown_remaining_secs?: number;
-  shutdown_timeout_secs?: number;
-}
-
-interface State {
-  reachable: boolean;
-  probed: string;
-  readyz?: ReadyzPayload;
-}
+import {
+  fetchProxyReachable,
+  isShuttingDown,
+  type ProxyReachable as State,
+} from "@/lib/proxy-status";
 
 type DisplayState = "unreachable" | "shutting_down" | "no_db" | "reconnected" | "healthy";
 
 function classify(s: State): DisplayState {
   if (!s.reachable) return "unreachable";
-  if (
-    s.readyz?.status === "shutting_down" ||
-    s.readyz?.failed_checks?.includes("shutting_down")
-  )
-    return "shutting_down";
+  if (isShuttingDown(s.readyz)) return "shutting_down";
   if (s.readyz?.passed_checks?.includes("postgres_not_configured")) return "no_db";
   return "healthy";
 }
@@ -58,10 +46,8 @@ export function ProxyReachabilityBanner() {
     let cancelled = false;
     async function probe() {
       try {
-        const res = await fetch("/api/proxy-reachable", { cache: "no-store" });
-        if (!res.ok || cancelled) return;
-        const body = (await res.json()) as State;
-        if (cancelled) return;
+        const body = await fetchProxyReachable();
+        if (!body || cancelled) return;
         const next = classify(body);
         const prev = prevDisplay.current;
         if (

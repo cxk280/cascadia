@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { isShuttingDown } from "@/lib/proxy-status";
 import { ProxyLivePip } from "./ProxyLivePip";
 
 /// Server wrapper that runs the first probe at render time and passes the
@@ -11,9 +12,7 @@ export async function ProxyLivePipServer() {
   };
   try {
     const body = await api.proxyReachable();
-    const shutting =
-      body.readyz?.status === "shutting_down" ||
-      body.readyz?.failed_checks?.includes("shutting_down");
+    const shutting = isShuttingDown(body.readyz);
     // SSR seeds only steady states (live OR down). A "draining" snapshot
     // from SSR can go stale within seconds (proxy may have fully exited
     // by the time the browser hydrates), which would freeze the pip in a

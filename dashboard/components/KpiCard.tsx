@@ -1,3 +1,5 @@
+// KpiCard — a single labeled metric tile (label, value, optional hint +
+// accent highlight) used on the Overview KPI grid.
 export function KpiCard({
   label,
   value,

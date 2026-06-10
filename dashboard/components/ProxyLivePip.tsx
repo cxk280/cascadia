@@ -2,6 +2,8 @@
 
 import { useEffect, useId, useState } from "react";
 
+import { fetchProxyReachable, isShuttingDown } from "@/lib/proxy-status";
+
 function LiveTooltip({ tipId }: { tipId: string }) {
   return (
     <div
@@ -41,15 +43,11 @@ export function ProxyLivePip({
     let cancelled = false;
     async function probe() {
       try {
-        const res = await fetch("/api/proxy-reachable", { cache: "no-store" });
-        if (!res.ok || cancelled) return;
-        const body = await res.json();
-        if (cancelled) return;
+        const body = await fetchProxyReachable();
+        if (!body || cancelled) return;
         setPip({
           reachable: body.reachable === true,
-          shuttingDown:
-            body.readyz?.status === "shutting_down" ||
-            body.readyz?.failed_checks?.includes?.("shutting_down"),
+          shuttingDown: isShuttingDown(body.readyz),
         });
       } catch {
         // dashboard-api unreachable — leave the pip in its last state.

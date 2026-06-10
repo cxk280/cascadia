@@ -1,23 +1,17 @@
+// Overview page — top-line KPIs (requests, escalation rate, latency, mean
+// judge score) for the last 7 days. Server component; fetches from
+// dashboard-api via lib/api, rendered inside Shell.
 import { KpiCard } from "@/components/KpiCard";
 import { ProxyLivePipServer } from "@/components/ProxyLivePipServer";
 import { Shell } from "@/components/Shell";
 import { api } from "@/lib/api";
+import { ms, pct } from "@/lib/format";
 
 export const revalidate = 10;
 // Force dynamic rendering: this page fetches from dashboard-api at request
 // time, so Next.js shouldn't try to prerender it at build time (which would
 // fail in CI/Railway where dashboard-api isn't reachable during the build).
 export const dynamic = "force-dynamic";
-
-function pct(value: number | null): string {
-  if (value == null) return "—";
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function ms(value: number | null): string {
-  if (value == null) return "—";
-  return `${value.toFixed(1)} ms`;
-}
 
 export default async function OverviewPage() {
   let overview;

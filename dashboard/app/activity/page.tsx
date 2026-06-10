@@ -1,6 +1,10 @@
+// Recent activity page — tail of the proxy event log + the latest judge
+// verdicts, side by side. Server component; api.recentEvents() /
+// recentVerdicts() via lib/api, rendered inside Shell.
 import { ProxyLivePipServer } from "@/components/ProxyLivePipServer";
 import { Shell } from "@/components/Shell";
 import { api } from "@/lib/api";
+import { pct } from "@/lib/format";
 
 export const revalidate = 5;
 export const dynamic = "force-dynamic";
@@ -125,7 +129,7 @@ export default async function ActivityPage() {
                     {v.cluster_id ?? "—"}
                   </td>
                   <td className="px-3 py-1.5 text-right text-accent">
-                    {(v.score * 100).toFixed(0)}%
+                    {pct(v.score, 0)}
                   </td>
                 </tr>
               ))}
