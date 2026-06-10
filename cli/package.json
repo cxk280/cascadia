@@ -1,6 +1,6 @@
 {
   "name": "cascadia-gateway",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "One-command launcher for Cascadia — the self-hostable LLM cascade gateway. `npx cascadia-gateway demo` brings up a keyless, zero-cost demo of the live cost/quality closed loop.",
   "bin": {
     "cascadia": "bin/cascadia.js"
