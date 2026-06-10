@@ -34,7 +34,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::cluster;
-use crate::config::{Config, Provider};
+use crate::config::{Config, ProviderConfig};
 use crate::error::AppError;
 use crate::events::{EventSender, ShadowPair};
 use crate::model_id::{parse_model_id, ModelId};
@@ -48,8 +48,9 @@ pub struct CascadeOutcome {
     /// Model that produced `final_response`. Either cheap or expensive.
     /// Full `provider/model` string as it appeared in the policy.
     pub final_model: String,
-    /// Provider that served `final_response`. Derived from `final_model`'s prefix.
-    pub final_provider: Provider,
+    /// Provider that served `final_response` (the resolved registry name, e.g.
+    /// `openai`, `huggingface`). Derived from `final_model`'s prefix.
+    pub final_provider: String,
     /// Response we return to the client.
     pub final_response: UpstreamResponse,
     /// True if the cheap tier was rejected and we escalated.
@@ -80,13 +81,13 @@ pub async fn route(
         .map_err(|e| AppError::Internal(e.context("cheap_model parse")))?;
     let expensive_id = parse_model_id(&cluster_policy.expensive_model)
         .map_err(|e| AppError::Internal(e.context("expensive_model parse")))?;
+    let cheap_provider = resolve_provider(config, &cheap_id, "cheap")?;
 
     // Tool-use bypass (Phase 7.1): if the caller sent `tools`, don't cascade.
     // Route to the cheap tier and return whatever it gives; no shadow logging.
     if has_tools(request) {
         let cheap_request = upstream::rewrite_model(request, &cheap_id.model);
-        let cheap_response =
-            upstream::forward_chat(http, config, cheap_id.provider, &cheap_request).await?;
+        let cheap_response = upstream::forward_chat(http, cheap_provider, &cheap_request).await?;
         if !is_success(cheap_response.status) {
             return Err(AppError::UpstreamStatus {
                 status: cheap_response.status,
@@ -96,7 +97,7 @@ pub async fn route(
         return Ok(CascadeOutcome {
             cluster_id,
             final_model: cluster_policy.cheap_model.clone(),
-            final_provider: cheap_id.provider,
+            final_provider: cheap_provider.name.clone(),
             final_response: cheap_response,
             escalated: false,
             shadow_logged: false,
@@ -105,8 +106,7 @@ pub async fn route(
 
     // 1. Cheap-tier call.
     let cheap_request = upstream::rewrite_model(request, &cheap_id.model);
-    let cheap_response =
-        upstream::forward_chat(http, config, cheap_id.provider, &cheap_request).await?;
+    let cheap_response = upstream::forward_chat(http, cheap_provider, &cheap_request).await?;
     if !is_success(cheap_response.status) {
         return Err(AppError::UpstreamStatus {
             status: cheap_response.status,
@@ -137,7 +137,7 @@ pub async fn route(
         return Ok(CascadeOutcome {
             cluster_id: cluster_id.clone(),
             final_model: cluster_policy.cheap_model.clone(),
-            final_provider: cheap_id.provider,
+            final_provider: cheap_provider.name.clone(),
             final_response: cheap_response,
             escalated: false,
             shadow_logged,
@@ -145,9 +145,9 @@ pub async fn route(
     }
 
     // 2. Escalate. Call expensive synchronously.
+    let expensive_provider = resolve_provider(config, &expensive_id, "expensive")?;
     let exp_request = upstream::rewrite_model(request, &expensive_id.model);
-    let exp_response =
-        upstream::forward_chat(http, config, expensive_id.provider, &exp_request).await?;
+    let exp_response = upstream::forward_chat(http, expensive_provider, &exp_request).await?;
     if !is_success(exp_response.status) {
         return Err(AppError::UpstreamStatus {
             status: exp_response.status,
@@ -175,10 +175,27 @@ pub async fn route(
     Ok(CascadeOutcome {
         cluster_id,
         final_model: cluster_policy.expensive_model.clone(),
-        final_provider: expensive_id.provider,
+        final_provider: expensive_provider.name.clone(),
         final_response: exp_response,
         escalated: true,
         shadow_logged: true,
+    })
+}
+
+/// Resolve a tier's `provider/` prefix against the configured registry. Policy
+/// validation (`PolicyTable::validate_providers`) guarantees this succeeds at
+/// boot / hot-reload; the error here is defense-in-depth, not an expected path.
+fn resolve_provider<'a>(
+    config: &'a Config,
+    id: &ModelId,
+    tier: &str,
+) -> Result<&'a ProviderConfig, AppError> {
+    config.resolve_provider(&id.provider).ok_or_else(|| {
+        AppError::Internal(anyhow::anyhow!(
+            "no provider configured for prefix `{}` ({tier} tier); configured: {:?}",
+            id.provider,
+            config.provider_names()
+        ))
     })
 }
 
@@ -189,7 +206,8 @@ pub async fn route(
 pub struct StreamingCascadeOutcome {
     pub cluster_id: String,
     pub final_model: String,
-    pub final_provider: Provider,
+    /// Resolved registry provider name (e.g. `openai`, `huggingface`).
+    pub final_provider: String,
     pub stream: UpstreamStreamResponse,
 }
 
@@ -209,16 +227,16 @@ pub async fn route_streaming(
     let cluster_policy = policy.lookup(&cluster_id).clone();
     let cheap_id = parse_model_id(&cluster_policy.cheap_model)
         .map_err(|e| AppError::Internal(e.context("cheap_model parse")))?;
+    let cheap_provider = resolve_provider(config, &cheap_id, "cheap")?;
 
     let upstream_request =
         upstream::force_stream(&upstream::rewrite_model(request, &cheap_id.model));
-    let stream =
-        upstream::forward_chat_stream(http, config, cheap_id.provider, &upstream_request).await?;
+    let stream = upstream::forward_chat_stream(http, cheap_provider, &upstream_request).await?;
 
     Ok(StreamingCascadeOutcome {
         cluster_id,
         final_model: cluster_policy.cheap_model.clone(),
-        final_provider: cheap_id.provider,
+        final_provider: cheap_provider.name.clone(),
         stream,
     })
 }
@@ -246,8 +264,18 @@ fn spawn_shadow(
 ) {
     tokio::spawn(async move {
         let exp_request = upstream::rewrite_model(&original_request, &expensive_id.model);
-        let result =
-            upstream::forward_chat(&http, &config, expensive_id.provider, &exp_request).await;
+        let provider = match config.resolve_provider(&expensive_id.provider) {
+            Some(p) => p,
+            None => {
+                tracing::warn!(
+                    request_id = %request_id,
+                    provider = %expensive_id.provider,
+                    "shadow eval skipped: no provider configured for expensive tier"
+                );
+                return;
+            }
+        };
+        let result = upstream::forward_chat(&http, provider, &exp_request).await;
         match result {
             Ok(resp) if is_success(resp.status) => {
                 let exp_text = extract_assistant_text(&resp.body).unwrap_or_default();

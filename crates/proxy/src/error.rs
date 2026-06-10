@@ -29,7 +29,7 @@ pub enum AppError {
     MethodNotAllowed(&'static str),
 
     #[error("upstream provider not configured: {0}")]
-    ProviderUnconfigured(&'static str),
+    ProviderUnconfigured(String),
 
     #[error("not found: {0}")]
     NotFound(&'static str),

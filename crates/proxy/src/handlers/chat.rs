@@ -21,7 +21,6 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::cascade::{self, CascadeOutcome};
-use crate::config::Provider;
 use crate::error::AppError;
 use crate::events::Event;
 use crate::model_id::parse_model_id;
@@ -126,7 +125,7 @@ pub async fn chat_completions(
             } else {
                 "upstream_error"
             };
-            (label, o.final_provider.label())
+            (label, o.final_provider.as_str())
         }
         Err(_) => ("error", "unknown"),
     };
@@ -165,7 +164,7 @@ pub async fn chat_completions(
                 escalated,
                 shadow_logged,
                 final_model = %final_model,
-                provider = final_provider.label(),
+                provider = final_provider.as_str(),
                 status = final_response.status,
                 elapsed_ms = elapsed.as_millis() as u64,
                 prompt_tokens = usage.map(|u| u.prompt_tokens),
@@ -180,7 +179,7 @@ pub async fn chat_completions(
                     request_id,
                     occurred_at: Utc::now(),
                     route: "chat_completions",
-                    provider: final_provider.label(),
+                    provider: final_provider.clone(),
                     model: final_model.clone(),
                     upstream_status: Some(final_response.status as i16),
                     elapsed_ms: elapsed.as_millis() as i32,
@@ -224,10 +223,11 @@ pub async fn chat_completions(
             if let Ok(hv) = axum::http::HeaderValue::from_str(&final_model) {
                 response.headers_mut().insert("x-cascadia-served-model", hv);
             }
-            response.headers_mut().insert(
-                "x-cascadia-served-provider",
-                axum::http::HeaderValue::from_static(final_provider.label()),
-            );
+            if let Ok(hv) = axum::http::HeaderValue::from_str(&final_provider) {
+                response
+                    .headers_mut()
+                    .insert("x-cascadia-served-provider", hv);
+            }
             response.headers_mut().insert(
                 "x-cascadia-escalated",
                 axum::http::HeaderValue::from_static(if escalated { "true" } else { "false" }),
@@ -244,8 +244,8 @@ pub async fn chat_completions(
             let error_code = error_code_for(&err);
             // Try to attribute the failure to whichever provider would have
             // served the cluster's cheap tier, falling back to "unknown".
-            let provider =
-                provider_for_cluster(state.policy(), &cluster_for_error).unwrap_or("unknown");
+            let provider = provider_for_cluster(state.policy(), &cluster_for_error)
+                .unwrap_or_else(|| "unknown".to_string());
             emit_event_failure(
                 &state,
                 request_id,
@@ -289,8 +289,8 @@ async fn stream_chat_completions(
         Ok(o) => o,
         Err(err) => {
             let error_code = error_code_for(&err);
-            let provider =
-                provider_for_cluster(state.policy(), &cluster_for_error).unwrap_or("unknown");
+            let provider = provider_for_cluster(state.policy(), &cluster_for_error)
+                .unwrap_or_else(|| "unknown".to_string());
             emit_event_failure(
                 &state,
                 request_id,
@@ -326,7 +326,7 @@ async fn stream_chat_completions(
     let request_for_event = request.clone();
     let status_for_event = upstream_status;
     let model_for_event = final_model.clone();
-    let provider_label = final_provider.label();
+    let provider_label = final_provider;
 
     // Wrap the upstream stream so once it ends (cleanly or with error), we
     // emit the event row and metrics. `then` lets us run an async finalizer
@@ -361,10 +361,14 @@ async fn stream_chat_completions(
             "upstream_error"
         };
         requests_total
-            .with_label_values(&["chat_completions_stream", provider_label, status_label])
+            .with_label_values(&[
+                "chat_completions_stream",
+                provider_label.as_str(),
+                status_label,
+            ])
             .inc();
         request_duration_seconds
-            .with_label_values(&["chat_completions_stream", provider_label])
+            .with_label_values(&["chat_completions_stream", provider_label.as_str()])
             .observe(elapsed.as_secs_f64());
 
         if let Some(sender) = events_sender {
@@ -379,6 +383,7 @@ async fn stream_chat_completions(
                 route: "chat_completions_stream",
                 provider: provider_label,
                 model: model_for_event,
+                // (provider_label moved here — last use in the finalizer)
                 upstream_status: Some(status_for_event as i16),
                 elapsed_ms: elapsed.as_millis() as i32,
                 // Streaming responses don't carry usage in standard chunks
@@ -428,16 +433,14 @@ fn error_code_for(err: &AppError) -> &'static str {
     }
 }
 
-/// Look up the cluster's cheap_model and return its provider label, for
+/// Look up the cluster's cheap_model and return its provider prefix, for
 /// error-event attribution before the cascade has run.
 fn provider_for_cluster(
     policy: std::sync::Arc<crate::policy::PolicyTable>,
     cluster_id: &str,
-) -> Option<&'static str> {
+) -> Option<String> {
     let p = policy.lookup(cluster_id);
-    parse_model_id(&p.cheap_model)
-        .ok()
-        .map(|id| id.provider.label())
+    parse_model_id(&p.cheap_model).ok().map(|id| id.provider)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -446,7 +449,7 @@ fn emit_event_failure(
     request_id: Uuid,
     request: &Value,
     final_model: Option<String>,
-    provider_label: &'static str,
+    provider: String,
     upstream_status: Option<i16>,
     started: Instant,
     error_code: &'static str,
@@ -468,7 +471,7 @@ fn emit_event_failure(
         request_id,
         occurred_at: Utc::now(),
         route: "chat_completions",
-        provider: provider_label,
+        provider,
         model,
         upstream_status,
         elapsed_ms: started.elapsed().as_millis() as i32,
@@ -481,11 +484,6 @@ fn emit_event_failure(
         escalated: None,
         tools_present: Some(cascade::has_tools(request)),
     });
-}
-
-#[allow(dead_code)]
-fn provider_label(provider: Provider) -> &'static str {
-    provider.label()
 }
 
 fn parse_usage(body: &Value) -> Option<Usage> {

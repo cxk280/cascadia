@@ -4,16 +4,16 @@
 //! its policy (parsed via `model_id::parse_model_id`). At call time we route
 //! to the right adapter based on that parsed provider:
 //!
-//! - `Provider::OpenAI`, `Provider::Groq`, `Provider::XAI` → `openai_compat`
-//!   adapter (all three speak the same `/v1/chat/completions` shape).
-//! - `Provider::Anthropic` → `anthropic` adapter, which translates OpenAI's
-//!   ChatCompletion request shape into Anthropic's `/v1/messages` API and
-//!   back. Tool-use parity is included (Phase 7.1).
+//! - `Wire::OpenAi` providers (OpenAI, Groq, xAI, HuggingFace, vLLM, …) →
+//!   `openai_compat` adapter (they all speak `/v1/chat/completions`).
+//! - `Wire::Anthropic` providers → `anthropic` adapter, which translates
+//!   OpenAI's ChatCompletion request shape into Anthropic's `/v1/messages` API
+//!   and back. Tool-use parity is included (Phase 7.1).
 //!
-//! The dispatch surface is just `forward_chat(http, config, provider, model,
-//! request_body)`. Adapters never see the `Provider` enum — they take the
-//! base URL + API key directly so a future per-cluster credential
-//! override is a one-line change.
+//! The dispatch surface is `forward_chat(http, provider, request_body)`, where
+//! `provider` is a resolved `ProviderConfig` (the cascade resolves the policy's
+//! `provider/` prefix against `Config`'s registry). Adapters never see the
+//! provider identity — they take the base URL + API key directly.
 
 pub mod anthropic;
 pub mod openai_compat;
@@ -25,7 +25,7 @@ use futures_util::Stream;
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use crate::config::{Config, Provider};
+use crate::config::{ProviderConfig, Wire};
 use crate::error::AppError;
 
 /// Result of an upstream call: the JSON response (normalized to OpenAI's
@@ -58,18 +58,20 @@ pub struct UpstreamStreamResponse {
 /// handles this.
 pub async fn forward_chat(
     client: &Client,
-    config: &Config,
-    provider: Provider,
+    provider: &ProviderConfig,
     request_body: &Value,
 ) -> Result<UpstreamResponse, AppError> {
-    let (api_key, base_url) = config
-        .provider_credentials(provider)
-        .ok_or_else(|| AppError::ProviderUnconfigured(provider_unconfigured_msg(provider)))?;
-    match provider {
-        Provider::OpenAI | Provider::Groq | Provider::XAI => {
-            openai_compat::forward(client, base_url, api_key, request_body).await
+    let api_key = provider
+        .api_key
+        .as_deref()
+        .ok_or_else(|| AppError::ProviderUnconfigured(unconfigured_msg(provider)))?;
+    match provider.wire {
+        Wire::OpenAi => {
+            openai_compat::forward(client, &provider.base_url, api_key, request_body).await
         }
-        Provider::Anthropic => anthropic::forward(client, base_url, api_key, request_body).await,
+        Wire::Anthropic => {
+            anthropic::forward(client, &provider.base_url, api_key, request_body).await
+        }
     }
 }
 
@@ -80,19 +82,19 @@ pub async fn forward_chat(
 /// are translated inside its adapter; OpenAI-compat providers pass through.
 pub async fn forward_chat_stream(
     client: &Client,
-    config: &Config,
-    provider: Provider,
+    provider: &ProviderConfig,
     request_body: &Value,
 ) -> Result<UpstreamStreamResponse, AppError> {
-    let (api_key, base_url) = config
-        .provider_credentials(provider)
-        .ok_or_else(|| AppError::ProviderUnconfigured(provider_unconfigured_msg(provider)))?;
-    match provider {
-        Provider::OpenAI | Provider::Groq | Provider::XAI => {
-            openai_compat::forward_stream(client, base_url, api_key, request_body).await
+    let api_key = provider
+        .api_key
+        .as_deref()
+        .ok_or_else(|| AppError::ProviderUnconfigured(unconfigured_msg(provider)))?;
+    match provider.wire {
+        Wire::OpenAi => {
+            openai_compat::forward_stream(client, &provider.base_url, api_key, request_body).await
         }
-        Provider::Anthropic => {
-            anthropic::forward_stream(client, base_url, api_key, request_body).await
+        Wire::Anthropic => {
+            anthropic::forward_stream(client, &provider.base_url, api_key, request_body).await
         }
     }
 }
@@ -115,11 +117,21 @@ pub fn force_stream(request: &Value) -> Value {
     cloned
 }
 
-fn provider_unconfigured_msg(provider: Provider) -> &'static str {
-    match provider {
-        Provider::OpenAI => "CASCADIA_OPENAI_API_KEY not set",
-        Provider::Anthropic => "CASCADIA_ANTHROPIC_API_KEY not set",
-        Provider::Groq => "CASCADIA_GROQ_API_KEY not set",
-        Provider::XAI => "CASCADIA_XAI_API_KEY not set",
-    }
+/// Build the "provider has no key" message, naming the env var the operator
+/// needs to set — the historical `CASCADIA_<NAME>_API_KEY` for the four
+/// built-ins, or `CASCADIA_PROVIDER_<NAME>_API_KEY` for a registry entry.
+fn unconfigured_msg(provider: &ProviderConfig) -> String {
+    let env_var = match provider.name.as_str() {
+        "openai" | "anthropic" | "groq" | "xai" => {
+            format!("CASCADIA_{}_API_KEY", provider.name.to_uppercase())
+        }
+        other => format!(
+            "CASCADIA_PROVIDER_{}_API_KEY",
+            other.to_uppercase().replace('-', "_")
+        ),
+    };
+    format!(
+        "provider `{}` has no API key set ({env_var} unset)",
+        provider.name
+    )
 }

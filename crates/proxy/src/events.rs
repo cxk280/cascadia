@@ -27,7 +27,10 @@ pub struct Event {
     pub request_id: Uuid,
     pub occurred_at: DateTime<Utc>,
     pub route: &'static str,
-    pub provider: &'static str,
+    /// Resolved provider name (registry key, e.g. `openai`, `huggingface`).
+    /// Owned `String` because providers are a dynamic registry, not a closed
+    /// enum of `&'static str` labels.
+    pub provider: String,
     pub model: String,
     pub upstream_status: Option<i16>,
     pub elapsed_ms: i32,
@@ -177,7 +180,7 @@ async fn insert_event(pool: &PgPool, e: &Event) -> Result<(), sqlx::Error> {
     .bind(e.request_id)
     .bind(e.occurred_at)
     .bind(e.route)
-    .bind(e.provider)
+    .bind(e.provider.as_str())
     .bind(&e.model)
     .bind(e.upstream_status)
     .bind(e.elapsed_ms)
