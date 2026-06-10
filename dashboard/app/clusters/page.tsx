@@ -1,3 +1,6 @@
+// Clusters page — per-cluster traffic + escalation + scored quality + live
+// policy (threshold / shadow_rate). Joins api.clusters() with api.policy();
+// rendered inside Shell.
 import { InfoTip } from "@/components/InfoTip";
 import { ProxyLivePipServer } from "@/components/ProxyLivePipServer";
 import { Shell } from "@/components/Shell";

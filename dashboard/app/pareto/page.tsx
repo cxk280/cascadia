@@ -1,3 +1,6 @@
+// Pareto page — the cost↔quality frontier (one dot per cluster). Thin server
+// wrapper: fetches the points via lib/api and hands them to the client-side
+// ParetoSlider (which renders ParetoChart). Rendered inside Shell.
 import { ParetoSlider } from "@/components/ParetoSlider";
 import { ProxyLivePipServer } from "@/components/ProxyLivePipServer";
 import { Shell } from "@/components/Shell";

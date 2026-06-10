@@ -1,3 +1,6 @@
+// Overview page — top-line KPIs (requests, escalation rate, latency, mean
+// judge score) for the last 7 days. Server component; fetches from
+// dashboard-api via lib/api, rendered inside Shell.
 import { KpiCard } from "@/components/KpiCard";
 import { ProxyLivePipServer } from "@/components/ProxyLivePipServer";
 import { Shell } from "@/components/Shell";

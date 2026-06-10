@@ -1,3 +1,6 @@
+// Recent activity page — tail of the proxy event log + the latest judge
+// verdicts, side by side. Server component; api.recentEvents() /
+// recentVerdicts() via lib/api, rendered inside Shell.
 import { ProxyLivePipServer } from "@/components/ProxyLivePipServer";
 import { Shell } from "@/components/Shell";
 import { api } from "@/lib/api";

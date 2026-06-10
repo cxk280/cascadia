@@ -1,3 +1,6 @@
+// Shell — the app frame (sidebar nav + header slot) that wraps every page.
+// Hosts the always-on live-status widgets: ProxyLivePip in the header and
+// ProxyReachabilityBanner above the page content.
 import Link from "next/link";
 import { ProxyLivePip } from "./ProxyLivePip";
 import { ProxyReachabilityBanner } from "./ProxyReachabilityBanner";

@@ -1,3 +1,6 @@
+// Health page — operator paging signals (proxy reachable, throughput, success
+// rate, latency) plus the data-residency posture for a GDPR/DSAR response.
+// Server component, uncached; each probe fails independently. Rendered in Shell.
 import { ProxyLivePipServer } from "@/components/ProxyLivePipServer";
 import { Shell } from "@/components/Shell";
 import { api, type ConfigSnapshot } from "@/lib/api";
